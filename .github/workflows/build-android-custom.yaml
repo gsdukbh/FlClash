@@ -1,0 +1,207 @@
+name: Build Custom Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: '应用包名 (Package Name / ApplicationId，例如 com.mysecurity.netguard)'
+        required: true
+        default: 'com.custom.flclash'
+        type: string
+      app_name:
+        description: '应用显示名称 (App Display Name，例如 网络助手)'
+        required: true
+        default: 'FlClash'
+        type: string
+      build_arch:
+        description: '构建架构 (arm64 构建更快且适合绝大多数现代手机)'
+        required: true
+        default: 'arm64-v8a'
+        type: choice
+        options:
+          - 'arm64-v8a'
+          - 'all'
+      create_release:
+        description: '是否自动创建 GitHub Release'
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+
+env:
+  IS_STABLE: ${{ !contains(github.ref, '-') }}
+  FLUTTER_VERSION: '3.47.4'
+  GO_VERSION: '1.26.4'
+  NDK_VERSION: r28c
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set Custom Parameters
+        id: params
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "PKG_NAME=${{ inputs.package_name }}" >> $GITHUB_ENV
+            echo "APP_NAME=${{ inputs.app_name }}" >> $GITHUB_ENV
+            echo "BUILD_ARCH=${{ inputs.build_arch }}" >> $GITHUB_ENV
+            echo "DO_RELEASE=${{ inputs.create_release }}" >> $GITHUB_ENV
+          else
+            echo "PKG_NAME=com.custom.flclash" >> $GITHUB_ENV
+            echo "APP_NAME=FlClash" >> $GITHUB_ENV
+            echo "BUILD_ARCH=arm64-v8a" >> $GITHUB_ENV
+            echo "DO_RELEASE=true" >> $GITHUB_ENV
+          fi
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: build-ndk
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          add-to-path: true
+          link-to-sdk: true
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Setup Android Release Keystore
+        run: |
+          mkdir -p android/app
+          if [ -n "${{ secrets.KEYSTORE }}" ] && [ -n "${{ secrets.KEY_ALIAS }}" ]; then
+            echo "Using user secrets for signing..."
+            echo "${{ secrets.KEYSTORE }}" | base64 --decode > android/app/keystore.jks
+            {
+              echo "keyAlias=${{ secrets.KEY_ALIAS }}"
+              echo "storePassword=${{ secrets.STORE_PASSWORD }}"
+              echo "keyPassword=${{ secrets.KEY_PASSWORD }}"
+            } >> android/local.properties
+          else
+            echo "No keystore secret provided. Generating random self-signed release keystore..."
+            RAND_PASS="flclash_$(openssl rand -hex 8)"
+            keytool -genkeypair -v \
+              -keystore android/app/keystore.jks \
+              -alias flclash_release \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "$RAND_PASS" \
+              -keypass "$RAND_PASS" \
+              -dname "CN=Android, OU=App, O=Google, L=Mountain View, ST=CA, C=US"
+
+            {
+              echo "keyAlias=flclash_release"
+              echo "storePassword=$RAND_PASS"
+              echo "keyPassword=$RAND_PASS"
+            } >> android/local.properties
+          fi
+
+      - name: Apply Package Name and App Name Patches
+        run: |
+          echo "Applying customizations: Package Name = $PKG_NAME, App Name = $APP_NAME"
+
+          # 1. 替换 android/app/build.gradle.kts 中的 applicationId
+          sed -i "s/applicationId = \"com.follow.clash\"/applicationId = \"$PKG_NAME\"/g" android/app/build.gradle.kts
+
+          # 2. 替换 android/app/google-services.json 中的 package_name
+          sed -i "s/\"com.follow.clash\"/\"$PKG_NAME\"/g" android/app/google-services.json
+          sed -i "s/\"com.follow.clash.debug\"/\"$PKG_NAME.debug\"/g" android/app/google-services.json
+          sed -i "s/\"com.follow.clash.dev\"/\"$PKG_NAME.dev\"/g" android/app/google-services.json
+
+          # 3. 替换清单文件和资源中的应用显示名称
+          sed -i "s/android:label=\"FlClash\"/android:label=\"$APP_NAME\"/g" android/app/src/main/AndroidManifest.xml
+          sed -i "s/<string name=\"FlClash\">FlClash<\/string>/<string name=\"FlClash\">$APP_NAME<\/string>/g" android/common/src/main/res/values/strings.xml
+
+          # 4. 替换系统通知与 VPN 会话中的显示标题
+          sed -i "s/setSession(\"FlClash\")/setSession(\"$APP_NAME\")/g" android/service/src/main/java/com/follow/clash/service/VpnService.kt
+          sed -i "s/setContentTitle(\"FlClash\")/setContentTitle(\"$APP_NAME\")/g" android/service/src/main/java/com/follow/clash/service/modules/NotificationModule.kt
+
+          # 5. 替换 Dart UI 与分发配置中的应用名称
+          sed -i "s/const appName = 'FlClash';/const appName = '$APP_NAME';/g" lib/common/constant.dart
+          sed -i "s/app_name: 'FlClash'/app_name: '$APP_NAME'/g" distribute_options.yaml
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: core/go.sum
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: android-arm64
+          workspaces: services/helper
+          cache-directories: .dart_tool/hooks_runner
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: master
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Get Flutter Dependencies
+        run: |
+          flutter --version
+          flutter pub get
+
+      - name: Build Android APK
+        env:
+          ANDROID_NDK_HOME: ${{ steps.build-ndk.outputs.ndk-path }}
+          ANDROID_NDK: ${{ steps.build-ndk.outputs.ndk-path }}
+        run: |
+          if [ "$BUILD_ARCH" = "arm64-v8a" ]; then
+            echo "Building only arm64-v8a architecture..."
+            dart setup.dart android --arch arm64 ${{ env.IS_STABLE == 'true' && '--env stable' || '' }} -v
+          else
+            echo "Building all architectures..."
+            dart setup.dart android ${{ env.IS_STABLE == 'true' && '--env stable' || '' }} -v
+          fi
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlClash-Android-${{ env.PKG_NAME }}
+          path: ./dist/*.apk
+          overwrite: true
+
+      - name: Calculate Checksums
+        if: env.DO_RELEASE == 'true'
+        run: |
+          cd ./dist
+          for file in $(find . -type f -name "*.apk"); do
+            sha256sum "$file" > "${file}.sha256"
+          done
+
+      - name: Create GitHub Release
+        if: env.DO_RELEASE == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./dist/*
+          tag_name: ${{ github.ref_name || format('v-custom-{0}', github.run_id) }}
+          name: ${{ format('{0} ({1})', env.APP_NAME, env.PKG_NAME) }}
+          body: |
+            ### 自定义版本构建完成
+            - **应用名称**: ${{ env.APP_NAME }}
+            - **应用包名**: ${{ env.PKG_NAME }}
+            - **构建架构**: ${{ env.BUILD_ARCH }}
+            - **构建时间**: ${{ github.event.head_commit.timestamp || github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
