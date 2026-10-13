@@ -1,13 +1,13 @@
-import 'package:fl_clash/common/common.dart';
-import 'package:fl_clash/controller.dart';
-import 'package:fl_clash/core/core.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/state.dart';
+import 'package:flutter/widgets.dart';
+
+const proxyGridSpacing = 8.0;
 
 double get listHeaderHeight {
   final measure = globalState.measure;
-  return 20 + measure.titleMediumHeight + 4 + measure.bodyMediumHeight + 2;
+  return 20 + measure.titleSmallHeight + 2 + measure.labelSmallHeight + 2;
 }
 
 double getItemHeight(ProxyCardType proxyCardType) {
@@ -21,68 +21,51 @@ double getItemHeight(ProxyCardType proxyCardType) {
   };
 }
 
-Future<void> proxyDelayTest(Proxy proxy, [String? testUrl]) async {
-  final groups = appController.groups;
-  final selectedMap = appController.currentProfile?.selectedMap ?? {};
-  final state = computeRealSelectedProxyState(
-    proxy.name,
-    groups: groups,
-    selectedMap: selectedMap,
-  );
-  final currentTestUrl = state.testUrl.takeFirstValid([
-    appController.getRealTestUrl(testUrl),
-  ]);
-  if (state.proxyName.isEmpty) {
+double getRowExtent(ProxyCardType proxyCardType) =>
+    getItemHeight(proxyCardType) + proxyGridSpacing;
+
+class GroupOffsets {
+  const GroupOffsets(this.groups, this.offsets);
+
+  static const empty = GroupOffsets(<Group>[], <double>[]);
+
+  final List<Group> groups;
+  final List<double> offsets;
+
+  bool get isEmpty => offsets.isEmpty;
+
+  double offsetOf(String groupName) {
+    final index = groups.indexWhere((group) => group.name == groupName);
+    if (index < 0 || index >= offsets.length) {
+      return 0;
+    }
+    return offsets[index];
+  }
+
+  Group? groupOf(String groupName) => groups.getGroup(groupName);
+}
+
+double? selectedRowOffset({
+  required List<Proxy> proxies,
+  required String? selectedProxyName,
+  required int columns,
+  required double rowExtent,
+}) {
+  final index = proxies.indexWhere((proxy) => proxy.name == selectedProxyName);
+  if (index < 0) {
+    return null;
+  }
+  return (index ~/ columns) * rowExtent;
+}
+
+void animateScrollTo(ScrollController controller, double offset) {
+  if (!controller.hasClients) {
     return;
   }
-  appController.setDelay(
-    Delay(url: currentTestUrl, name: state.proxyName, value: 0),
+  final position = controller.position;
+  controller.animateTo(
+    offset.clamp(position.minScrollExtent, position.maxScrollExtent),
+    duration: const Duration(milliseconds: 300),
+    curve: Curves.easeOutCubic,
   );
-  appController.setDelay(
-    await coreController.getDelay(currentTestUrl, state.proxyName),
-  );
-}
-
-Future<void> delayTest(List<Proxy> proxies, [String? testUrl]) async {
-  final proxyNames = proxies.map((proxy) => proxy.name).toSet().toList();
-
-  final delayProxies = proxyNames.map<Future>((proxyName) async {
-    final groups = appController.groups;
-    final selectedMap = appController.currentProfile?.selectedMap ?? {};
-    final state = computeRealSelectedProxyState(
-      proxyName,
-      groups: groups,
-      selectedMap: selectedMap,
-    );
-    final url = state.testUrl.takeFirstValid([
-      appController.getRealTestUrl(testUrl),
-    ]);
-    final name = state.proxyName;
-    if (name.isEmpty) {
-      return;
-    }
-    appController.setDelay(Delay(url: url, name: name, value: 0));
-    appController.setDelay(await coreController.getDelay(url, name));
-  }).toList();
-
-  final batchesDelayProxies = delayProxies.batch(100);
-  for (final batchDelayProxies in batchesDelayProxies) {
-    await Future.wait(batchDelayProxies);
-  }
-  appController.addSortNum();
-}
-
-double getScrollToSelectedOffset({
-  required String groupName,
-  required List<Proxy> proxies,
-}) {
-  final columns = appController.getProxiesColumns();
-  final proxyCardType = appController.config.proxiesStyleProps.cardType;
-  final selectedProxyName = appController.getSelectedProxyName(groupName);
-  final findSelectedIndex = proxies.indexWhere(
-    (proxy) => proxy.name == selectedProxyName,
-  );
-  final selectedIndex = findSelectedIndex != -1 ? findSelectedIndex : 0;
-  final rows = (selectedIndex / columns).floor();
-  return rows * getItemHeight(proxyCardType) + (rows - 1) * 8;
 }

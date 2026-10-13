@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:fl_clash/common/common.dart';
@@ -7,6 +6,7 @@ import 'package:fl_clash/core/core.dart';
 import 'package:fl_clash/core/interface.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:path/path.dart';
 
@@ -22,24 +22,44 @@ class CoreController {
     }
   }
 
+  @visibleForTesting
+  CoreController.test(this._interface) {
+    _instance = this;
+  }
+
+  @visibleForTesting
+  CoreController.scoped(this._interface);
+
+  @visibleForTesting
+  static void resetInstance() {
+    _instance = null;
+  }
+
   factory CoreController() {
     _instance ??= CoreController._internal();
     return _instance!;
   }
 
-  bool get isCompleted => _interface.completer.isCompleted;
+  Future<CoreLifecycleResult> start() => _interface.start();
 
-  Future<String> preload() {
-    return _interface.preload();
-  }
+  Future<CoreLifecycleResult> restart() => _interface.restart();
 
-  static Future<void> initGeo() async {
+  Future<CoreLifecycleResult> stop() => _interface.stop();
+
+  Future<CoreLifecycleResult> close() => _interface.close();
+
+  static Future<void> ensureHomeDir() async {
     final homePath = await appPath.homeDirPath;
     final homeDir = Directory(homePath);
     final isExists = await homeDir.exists();
     if (!isExists) {
       await homeDir.create(recursive: true);
     }
+    await system.grantHomeDirAccess(homePath);
+  }
+
+  static Future<void> initGeo() async {
+    final homePath = await appPath.homeDirPath;
     const geoFileNameList = [MMDB, GEOIP, GEOSITE, ASN];
     try {
       for (final geoFileName in geoFileNameList) {
@@ -49,24 +69,23 @@ class CoreController {
           continue;
         }
         final data = await rootBundle.load('assets/data/$geoFileName');
-        List<int> bytes = data.buffer.asUint8List();
+        final List<int> bytes = data.buffer.asUint8List();
         await geoFile.writeAsBytes(bytes, flush: true);
       }
     } catch (e) {
-      exit(0);
+      commonPrint.log(
+        'Failed to initialize geo data: $e',
+        logLevel: LogLevel.error,
+      );
+      rethrow;
     }
   }
 
   Future<bool> init(int version) async {
+    await ensureHomeDir();
     await initGeo();
     final homeDirPath = await appPath.homeDirPath;
-    return await _interface.init(
-      InitParams(homeDir: homeDirPath, version: version),
-    );
-  }
-
-  Future<void> shutdown(bool isUser) async {
-    await _interface.shutdown(isUser);
+    return _interface.init(InitParams(homeDir: homeDirPath, version: version));
   }
 
   FutureOr<bool> get isInit => _interface.isInit;
@@ -74,6 +93,13 @@ class CoreController {
   Future<String> validateConfig(String path) async {
     final res = await _interface.validateConfig(path);
     return res;
+  }
+
+  Future<List<String>> validateProxies(List<Map<String, dynamic>> proxies) {
+    if (proxies.isEmpty) {
+      return Future.value(const []);
+    }
+    return _interface.validateProxies(proxies);
   }
 
   Future<String> validateConfigWithData(String data) async {
@@ -86,19 +112,21 @@ class CoreController {
   }
 
   Future<String> updateConfig(UpdateParams updateParams) async {
-    return await _interface.updateConfig(updateParams);
+    return _interface.updateConfig(updateParams);
   }
 
   Future<String> setupConfig({
     required SetupParams params,
-    required SetupState setupState,
-    VoidCallback? preloadInvoke,
+    Future<void> Function()? preloadInvoke,
   }) async {
-    final res = _interface.setupConfig(params);
-    if (preloadInvoke != null) {
-      preloadInvoke();
+    if (preloadInvoke == null) {
+      return _interface.setupConfig(params);
     }
-    return res;
+    final (result, _) = await (
+      _interface.setupConfig(params),
+      preloadInvoke(),
+    ).wait;
+    return result;
   }
 
   Future<List<Group>> getProxiesGroups({
@@ -119,55 +147,46 @@ class CoreController {
     );
   }
 
-  FutureOr<String> changeProxy(ChangeProxyParams changeProxyParams) async {
-    return await _interface.changeProxy(changeProxyParams);
+  Future<ChangeProxyResult> changeProxy(ChangeProxyParams changeProxyParams) {
+    return _interface.changeProxy(changeProxyParams);
+  }
+
+  Future<RouteSnapshot?> watchRoute(bool watch) {
+    return _interface.watchRoute(watch);
   }
 
   Future<List<TrackerInfo>> getConnections() async {
-    final res = await _interface.getConnections();
-    final connectionsData = json.decode(res) as Map;
-    final connectionsRaw = connectionsData['connections'] as List? ?? [];
-    return connectionsRaw.map((e) => TrackerInfo.fromJson(e)).toList();
+    return _interface.getConnections();
   }
 
-  void closeConnection(String id) {
-    _interface.closeConnection(id);
+  Future<int> getConnectionCount() async {
+    return _interface.getConnectionCount();
   }
 
-  void closeConnections() {
-    _interface.closeConnections();
+  Future<void> closeConnection(String id) async {
+    await _interface.closeConnection(id);
   }
 
-  void resetConnections() {
-    _interface.resetConnections();
+  Future<void> closeConnections() async {
+    await _interface.closeConnections();
+  }
+
+  Future<void> resetConnections() async {
+    await _interface.resetConnections();
   }
 
   Future<List<ExternalProvider>> getExternalProviders() async {
-    final externalProvidersRawString = await _interface.getExternalProviders();
-    if (externalProvidersRawString.isEmpty) {
-      return [];
-    }
-    final externalProviders =
-        (await externalProvidersRawString.commonToJSON<List<dynamic>>())
-            .map((item) => ExternalProvider.fromJson(item))
-            .toList();
-    return externalProviders;
+    return _interface.getExternalProviders();
   }
 
   Future<ExternalProvider?> getExternalProvider(
     String externalProviderName,
   ) async {
-    final externalProvidersRawString = await _interface.getExternalProvider(
-      externalProviderName,
-    );
-    if (externalProvidersRawString.isEmpty) {
-      return null;
-    }
-    return ExternalProvider.fromJson(json.decode(externalProvidersRawString));
+    return _interface.getExternalProvider(externalProviderName);
   }
 
-  Future<String> updateGeoData(UpdateGeoDataParams params) {
-    return _interface.updateGeoData(params);
+  Future<String> updateGeoData(String type) {
+    return _interface.updateGeoData(type);
   }
 
   Future<String> sideLoadExternalProvider({
@@ -180,68 +199,59 @@ class CoreController {
     );
   }
 
+  Future<String> dumpRuleSet(String path) {
+    return _interface.dumpRuleSet(path);
+  }
+
   Future<String> updateExternalProvider({required String providerName}) async {
     return _interface.updateExternalProvider(providerName);
   }
 
   Future<bool> startListener() async {
-    return await _interface.startListener();
+    return _interface.startListener();
   }
 
   Future<bool> stopListener() async {
-    return await _interface.stopListener();
+    return _interface.stopListener();
   }
 
-  Future<Delay> getDelay(String url, String proxyName) async {
-    final data = await _interface.asyncTestDelay(url, proxyName);
-    return Delay.fromJson(json.decode(data));
+  Future<Delay?> getDelay(String url, String proxyName) async {
+    return _interface.asyncTestDelay(url, proxyName);
   }
+
+  Future<ProbeResult?> probe(ProbeParams params) => _interface.probe(params);
+
+  Future<OutboundIpResult?> outboundIp(OutboundIpParams params) =>
+      _interface.outboundIp(params);
+
+  Future<List<ServiceCheckItem>> serviceCheck(ServiceCheckParams params) =>
+      _interface.serviceCheck(params);
 
   Future<Map<String, dynamic>> getConfig(int id) async {
-    final profilePath = await appPath.getProfilePath(id.toString());
-    final res = await _interface.getConfig(profilePath);
-    if (res.isSuccess) {
-      final data = Map<String, dynamic>.from(res.data);
-      data['rules'] = data['rule'];
-      data.remove('rule');
-      return data;
-    } else {
-      throw res.message;
-    }
+    return _readConfig(await appPath.getProfilePath(id.toString()));
+  }
+
+  Future<Map<String, dynamic>> getAppliedConfig() async {
+    return _readConfig(await appPath.configFilePath);
+  }
+
+  Future<Map<String, dynamic>> _readConfig(String path) async {
+    final data = Map<String, dynamic>.from(await _interface.getConfig(path));
+    data['rules'] = data['rule'];
+    data.remove('rule');
+    return data;
   }
 
   Future<Traffic> getTraffic(bool onlyStatisticsProxy) async {
-    final trafficString = await _interface.getTraffic(onlyStatisticsProxy);
-    if (trafficString.isEmpty) {
-      return Traffic();
-    }
-    return Traffic.fromJson(json.decode(trafficString));
-  }
-
-  Future<IpInfo?> getCountryCode(String ip) async {
-    final countryCode = await _interface.getCountryCode(ip);
-    if (countryCode.isEmpty) {
-      return null;
-    }
-    return IpInfo(ip: ip, countryCode: countryCode);
+    return _interface.getTraffic(onlyStatisticsProxy);
   }
 
   Future<Traffic> getTotalTraffic(bool onlyStatisticsProxy) async {
-    final totalTrafficString = await _interface.getTotalTraffic(
-      onlyStatisticsProxy,
-    );
-    if (totalTrafficString.isEmpty) {
-      return Traffic();
-    }
-    return Traffic.fromJson(json.decode(totalTrafficString));
+    return _interface.getTotalTraffic(onlyStatisticsProxy);
   }
 
-  Future<int> getMemory() async {
-    final value = await _interface.getMemory();
-    if (value.isEmpty) {
-      return 0;
-    }
-    return int.parse(value);
+  Future<CoreMemoryStats?> getMemoryStats() async {
+    return _interface.getMemoryStats();
   }
 
   void resetTraffic() {
@@ -260,16 +270,12 @@ class CoreController {
     await _interface.forceGc();
   }
 
-  Future<void> destroy() async {
-    await _interface.destroy();
-  }
-
   Future<void> crash() async {
     await _interface.crash();
   }
 
-  Future<String> deleteFile(String path) async {
-    return await _interface.deleteFile(path);
+  Future<String> clearEffect(int profileId) async {
+    return _interface.clearEffect(profileId);
   }
 }
 

@@ -7,56 +7,113 @@ part of '../clash_config.dart';
 // **************************************************************************
 
 _ProxyGroup _$ProxyGroupFromJson(Map<String, dynamic> json) => _ProxyGroup(
+  profileId: (json['profileId'] as num?)?.toInt(),
+  id: Snowflake.buildId((json['id'] as num?)?.toInt()),
   name: json['name'] as String,
-  type: GroupType.parseProfileType(json['type'] as String),
+  type: $enumDecode(_$GroupTypeEnumMap, json['type']),
   proxies: (json['proxies'] as List<dynamic>?)
       ?.map((e) => e as String)
       .toList(),
   use: (json['use'] as List<dynamic>?)?.map((e) => e as String).toList(),
   interval: (json['interval'] as num?)?.toInt(),
   lazy: json['lazy'] as bool?,
+  disableUDP: json['disable-udp'] as bool?,
   url: json['url'] as String?,
   timeout: (json['timeout'] as num?)?.toInt(),
   maxFailedTimes: (json['max-failed-times'] as num?)?.toInt(),
   filter: json['filter'] as String?,
-  excludeFilter: json['expected-filter'] as String?,
+  excludeFilter: json['exclude-filter'] as String?,
   excludeType: json['exclude-type'] as String?,
-  expectedStatus: json['expected-status'],
+  expectedStatus: json['expected-status'] as String?,
+  tolerance: (json['tolerance'] as num?)?.toInt(),
+  strategy: $enumDecodeNullable(_$LoadBalanceStrategyEnumMap, json['strategy']),
+  includeAll: json['include-all'] as bool?,
+  includeAllProxies: json['include-all-proxies'] as bool?,
+  includeAllProviders: json['include-all-providers'] as bool?,
   hidden: json['hidden'] as bool?,
   icon: json['icon'] as String?,
+  order: json['order'] as String?,
 );
 
 Map<String, dynamic> _$ProxyGroupToJson(_ProxyGroup instance) =>
     <String, dynamic>{
+      'profileId': instance.profileId,
+      'id': instance.id,
       'name': instance.name,
       'type': _$GroupTypeEnumMap[instance.type]!,
       'proxies': instance.proxies,
       'use': instance.use,
       'interval': instance.interval,
       'lazy': instance.lazy,
+      'disable-udp': instance.disableUDP,
       'url': instance.url,
       'timeout': instance.timeout,
       'max-failed-times': instance.maxFailedTimes,
       'filter': instance.filter,
-      'expected-filter': instance.excludeFilter,
+      'exclude-filter': instance.excludeFilter,
       'exclude-type': instance.excludeType,
       'expected-status': instance.expectedStatus,
+      'tolerance': instance.tolerance,
+      'strategy': _$LoadBalanceStrategyEnumMap[instance.strategy],
+      'include-all': instance.includeAll,
+      'include-all-proxies': instance.includeAllProxies,
+      'include-all-providers': instance.includeAllProviders,
       'hidden': instance.hidden,
       'icon': instance.icon,
+      'order': instance.order,
     };
 
 const _$GroupTypeEnumMap = {
-  GroupType.Selector: 'Selector',
-  GroupType.URLTest: 'URLTest',
-  GroupType.Fallback: 'Fallback',
-  GroupType.LoadBalance: 'LoadBalance',
-  GroupType.Relay: 'Relay',
+  GroupType.Selector: 'select',
+  GroupType.URLTest: 'url-test',
+  GroupType.Fallback: 'fallback',
+  GroupType.LoadBalance: 'load-balance',
+  GroupType.Relay: 'relay',
 };
+
+const _$LoadBalanceStrategyEnumMap = {
+  LoadBalanceStrategy.consistentHashing: 'consistent-hashing',
+  LoadBalanceStrategy.roundRobin: 'round-robin',
+  LoadBalanceStrategy.stickySessions: 'sticky-sessions',
+};
+
+_Proxy _$ProxyFromJson(Map<String, dynamic> json) => _Proxy(
+  name: json['name'] as String,
+  type: json['type'] as String,
+  now: json['now'] as String?,
+);
+
+Map<String, dynamic> _$ProxyToJson(_Proxy instance) => <String, dynamic>{
+  'name': instance.name,
+  'type': instance.type,
+  'now': instance.now,
+};
+
+_CustomProxy _$CustomProxyFromJson(Map<String, dynamic> json) => _CustomProxy(
+  profileId: (json['profileId'] as num?)?.toInt(),
+  id: Snowflake.buildId((json['id'] as num?)?.toInt()),
+  definition: json['definition'] as Map<String, dynamic>? ?? const {},
+  order: json['order'] as String?,
+);
+
+Map<String, dynamic> _$CustomProxyToJson(_CustomProxy instance) =>
+    <String, dynamic>{
+      'profileId': instance.profileId,
+      'id': instance.id,
+      'definition': instance.definition,
+      'order': instance.order,
+    };
 
 _RuleProvider _$RuleProviderFromJson(Map<String, dynamic> json) =>
     _RuleProvider(name: json['name'] as String);
 
 Map<String, dynamic> _$RuleProviderToJson(_RuleProvider instance) =>
+    <String, dynamic>{'name': instance.name};
+
+_ProxyProvider _$ProxyProviderFromJson(Map<String, dynamic> json) =>
+    _ProxyProvider(name: json['name'] as String);
+
+Map<String, dynamic> _$ProxyProviderToJson(_ProxyProvider instance) =>
     <String, dynamic>{'name': instance.name};
 
 _Sniffer _$SnifferFromJson(Map<String, dynamic> json) => _Sniffer(
@@ -132,8 +189,7 @@ _Tun _$TunFromJson(Map<String, dynamic> json) => _Tun(
   enable: json['enable'] as bool? ?? false,
   device: json['device'] as String? ?? appName,
   autoRoute: json['auto-route'] as bool? ?? false,
-  stack:
-      $enumDecodeNullable(_$TunStackEnumMap, json['stack']) ?? TunStack.mixed,
+  stack: $enumDecodeNullable(_$TunStackEnumMap, json['stack']) ?? TunStack.mips,
   dnsHijack:
       (json['dns-hijack'] as List<dynamic>?)
           ?.map((e) => e as String)
@@ -159,6 +215,7 @@ const _$TunStackEnumMap = {
   TunStack.gvisor: 'gvisor',
   TunStack.system: 'system',
   TunStack.mixed: 'mixed',
+  TunStack.mips: 'mips',
 };
 
 _FallbackFilter _$FallbackFilterFromJson(
@@ -168,13 +225,13 @@ _FallbackFilter _$FallbackFilterFromJson(
   geoipCode: json['geoip-code'] as String? ?? 'CN',
   geosite:
       (json['geosite'] as List<dynamic>?)?.map((e) => e as String).toList() ??
-      const ['gfw'],
+      const [],
   ipcidr:
       (json['ipcidr'] as List<dynamic>?)?.map((e) => e as String).toList() ??
-      const ['240.0.0.0/4'],
+      const [],
   domain:
       (json['domain'] as List<dynamic>?)?.map((e) => e as String).toList() ??
-      const ['+.google.com', '+.facebook.com', '+.youtube.com'],
+      const [],
 );
 
 Map<String, dynamic> _$FallbackFilterToJson(_FallbackFilter instance) =>
@@ -189,34 +246,47 @@ Map<String, dynamic> _$FallbackFilterToJson(_FallbackFilter instance) =>
 _Dns _$DnsFromJson(Map<String, dynamic> json) => _Dns(
   enable: json['enable'] as bool? ?? true,
   listen: json['listen'] as String? ?? '0.0.0.0:1053',
+  listenRoutingMark: (json['listen-routing-mark'] as num?)?.toInt() ?? 0,
   preferH3: json['prefer-h3'] as bool? ?? false,
   useHosts: json['use-hosts'] as bool? ?? true,
   useSystemHosts: json['use-system-hosts'] as bool? ?? true,
   respectRules: json['respect-rules'] as bool? ?? false,
   ipv6: json['ipv6'] as bool? ?? false,
+  ipv6Timeout: (json['ipv6-timeout'] as num?)?.toInt() ?? 100,
+  cacheAlgorithm:
+      $enumDecodeNullable(
+        _$DnsCacheAlgorithmEnumMap,
+        json['cache-algorithm'],
+      ) ??
+      DnsCacheAlgorithm.lru,
+  cacheMaxSize: (json['cache-max-size'] as num?)?.toInt() ?? 4096,
   defaultNameserver:
       (json['default-nameserver'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList() ??
-      const ['223.5.5.5'],
+      const ['114.114.114.114', '223.5.5.5', '8.8.8.8', '1.0.0.1'],
   enhancedMode:
       $enumDecodeNullable(_$DnsModeEnumMap, json['enhanced-mode']) ??
       DnsMode.fakeIp,
   fakeIpRange: json['fake-ip-range'] as String? ?? '198.18.0.1/16',
+  fakeIpRange6: json['fake-ip-range6'] as String? ?? 'fdfe:dcba:9876::1/64',
   fakeIpFilter:
       (json['fake-ip-filter'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList() ??
-      const ['*.lan', 'localhost.ptlogin2.qq.com'],
+      const ['dns.msftnsci.com', 'www.msftnsci.com', 'www.msftconnecttest.com'],
+  fakeIpFilterMode:
+      $enumDecodeNullable(
+        _$FakeIpFilterModeEnumMap,
+        json['fake-ip-filter-mode'],
+      ) ??
+      FakeIpFilterMode.blacklist,
+  fakeIpTtl: (json['fake-ip-ttl'] as num?)?.toInt() ?? 1,
   nameserverPolicy:
       (json['nameserver-policy'] as Map<String, dynamic>?)?.map(
         (k, e) => MapEntry(k, e as String),
       ) ??
-      const {
-        'www.baidu.com': '114.114.114.114',
-        '+.internal.crop.com': '10.0.0.1',
-        'geosite:cn': 'https://doh.pub/dns-query',
-      },
+      const {},
   nameserver:
       (json['nameserver'] as List<dynamic>?)
           ?.map((e) => e as String)
@@ -224,12 +294,25 @@ _Dns _$DnsFromJson(Map<String, dynamic> json) => _Dns(
       const ['https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query'],
   fallback:
       (json['fallback'] as List<dynamic>?)?.map((e) => e as String).toList() ??
-      const ['tls://8.8.4.4', 'tls://1.1.1.1'],
+      const [],
+  fallbackLazyQuery: json['fallback-lazy-query'] as bool? ?? false,
   proxyServerNameserver:
       (json['proxy-server-nameserver'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList() ??
-      const ['https://doh.pub/dns-query'],
+      const [],
+  proxyServerNameserverPolicy:
+      (json['proxy-server-nameserver-policy'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(k, e as String),
+      ) ??
+      const {},
+  directNameserver:
+      (json['direct-nameserver'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList() ??
+      const [],
+  directNameserverFollowPolicy:
+      json['direct-nameserver-follow-policy'] as bool? ?? false,
   fallbackFilter: json['fallback-filter'] == null
       ? const FallbackFilter()
       : FallbackFilter.fromJson(
@@ -240,20 +323,36 @@ _Dns _$DnsFromJson(Map<String, dynamic> json) => _Dns(
 Map<String, dynamic> _$DnsToJson(_Dns instance) => <String, dynamic>{
   'enable': instance.enable,
   'listen': instance.listen,
+  'listen-routing-mark': instance.listenRoutingMark,
   'prefer-h3': instance.preferH3,
   'use-hosts': instance.useHosts,
   'use-system-hosts': instance.useSystemHosts,
   'respect-rules': instance.respectRules,
   'ipv6': instance.ipv6,
+  'ipv6-timeout': instance.ipv6Timeout,
+  'cache-algorithm': _$DnsCacheAlgorithmEnumMap[instance.cacheAlgorithm]!,
+  'cache-max-size': instance.cacheMaxSize,
   'default-nameserver': instance.defaultNameserver,
   'enhanced-mode': _$DnsModeEnumMap[instance.enhancedMode]!,
   'fake-ip-range': instance.fakeIpRange,
+  'fake-ip-range6': instance.fakeIpRange6,
   'fake-ip-filter': instance.fakeIpFilter,
+  'fake-ip-filter-mode': _$FakeIpFilterModeEnumMap[instance.fakeIpFilterMode]!,
+  'fake-ip-ttl': instance.fakeIpTtl,
   'nameserver-policy': instance.nameserverPolicy,
   'nameserver': instance.nameserver,
   'fallback': instance.fallback,
+  'fallback-lazy-query': instance.fallbackLazyQuery,
   'proxy-server-nameserver': instance.proxyServerNameserver,
+  'proxy-server-nameserver-policy': instance.proxyServerNameserverPolicy,
+  'direct-nameserver': instance.directNameserver,
+  'direct-nameserver-follow-policy': instance.directNameserverFollowPolicy,
   'fallback-filter': instance.fallbackFilter,
+};
+
+const _$DnsCacheAlgorithmEnumMap = {
+  DnsCacheAlgorithm.lru: 'lru',
+  DnsCacheAlgorithm.arc: 'arc',
 };
 
 const _$DnsModeEnumMap = {
@@ -263,130 +362,206 @@ const _$DnsModeEnumMap = {
   DnsMode.hosts: 'hosts',
 };
 
-_GeoXUrl _$GeoXUrlFromJson(Map<String, dynamic> json) => _GeoXUrl(
-  mmdb:
-      json['mmdb'] as String? ??
-      'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb',
-  asn:
-      json['asn'] as String? ??
-      'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb',
-  geoip:
-      json['geoip'] as String? ??
-      'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat',
-  geosite:
-      json['geosite'] as String? ??
-      'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat',
+const _$FakeIpFilterModeEnumMap = {
+  FakeIpFilterMode.blacklist: 'blacklist',
+  FakeIpFilterMode.whitelist: 'whitelist',
+  FakeIpFilterMode.rule: 'rule',
+};
+
+_Ntp _$NtpFromJson(Map<String, dynamic> json) => _Ntp(
+  enable: json['enable'] as bool? ?? false,
+  server: json['server'] as String? ?? 'time.apple.com',
+  port: (json['port'] as num?)?.toInt() ?? 123,
+  interval: (json['interval'] as num?)?.toInt() ?? 30,
+  dialerProxy: json['dialer-proxy'] as String? ?? '',
+  writeToSystem: json['write-to-system'] as bool? ?? false,
 );
 
-Map<String, dynamic> _$GeoXUrlToJson(_GeoXUrl instance) => <String, dynamic>{
-  'mmdb': instance.mmdb,
-  'asn': instance.asn,
-  'geoip': instance.geoip,
-  'geosite': instance.geosite,
+Map<String, dynamic> _$NtpToJson(_Ntp instance) => <String, dynamic>{
+  'enable': instance.enable,
+  'server': instance.server,
+  'port': instance.port,
+  'interval': instance.interval,
+  'dialer-proxy': instance.dialerProxy,
+  'write-to-system': instance.writeToSystem,
 };
 
 _Rule _$RuleFromJson(Map<String, dynamic> json) => _Rule(
-  id: (json['id'] as num).toInt(),
-  value: json['value'] as String,
+  id: (json['id'] as num?)?.toInt() ?? -1,
+  ruleAction:
+      $enumDecodeNullable(_$RuleActionEnumMap, json['ruleAction']) ??
+      RuleAction.DOMAIN,
+  content: json['content'] as String?,
+  ruleTarget: json['ruleTarget'] as String?,
+  ruleProvider: json['ruleProvider'] as String?,
+  subRule: json['subRule'] as String?,
+  noResolve: json['noResolve'] as bool? ?? false,
+  src: json['src'] as bool? ?? false,
   order: json['order'] as String?,
 );
 
 Map<String, dynamic> _$RuleToJson(_Rule instance) => <String, dynamic>{
   'id': instance.id,
-  'value': instance.value,
+  'ruleAction': _$RuleActionEnumMap[instance.ruleAction]!,
+  'content': instance.content,
+  'ruleTarget': instance.ruleTarget,
+  'ruleProvider': instance.ruleProvider,
+  'subRule': instance.subRule,
+  'noResolve': instance.noResolve,
+  'src': instance.src,
   'order': instance.order,
 };
 
-_SubRule _$SubRuleFromJson(Map<String, dynamic> json) =>
-    _SubRule(name: json['name'] as String);
-
-Map<String, dynamic> _$SubRuleToJson(_SubRule instance) => <String, dynamic>{
-  'name': instance.name,
+const _$RuleActionEnumMap = {
+  RuleAction.DOMAIN: 'DOMAIN',
+  RuleAction.DOMAIN_SUFFIX: 'DOMAIN_SUFFIX',
+  RuleAction.DOMAIN_KEYWORD: 'DOMAIN_KEYWORD',
+  RuleAction.DOMAIN_REGEX: 'DOMAIN_REGEX',
+  RuleAction.DOMAIN_WILDCARD: 'DOMAIN_WILDCARD',
+  RuleAction.GEOSITE: 'GEOSITE',
+  RuleAction.IP_CIDR: 'IP_CIDR',
+  RuleAction.IP_CIDR6: 'IP_CIDR6',
+  RuleAction.IP_SUFFIX: 'IP_SUFFIX',
+  RuleAction.IP_ASN: 'IP_ASN',
+  RuleAction.GEOIP: 'GEOIP',
+  RuleAction.SRC_GEOIP: 'SRC_GEOIP',
+  RuleAction.SRC_IP_ASN: 'SRC_IP_ASN',
+  RuleAction.SRC_IP_CIDR: 'SRC_IP_CIDR',
+  RuleAction.SRC_IP_SUFFIX: 'SRC_IP_SUFFIX',
+  RuleAction.DST_PORT: 'DST_PORT',
+  RuleAction.SRC_PORT: 'SRC_PORT',
+  RuleAction.IN_PORT: 'IN_PORT',
+  RuleAction.IN_TYPE: 'IN_TYPE',
+  RuleAction.IN_USER: 'IN_USER',
+  RuleAction.IN_NAME: 'IN_NAME',
+  RuleAction.REMATCH_NAME: 'REMATCH_NAME',
+  RuleAction.PROCESS_PATH: 'PROCESS_PATH',
+  RuleAction.PROCESS_PATH_REGEX: 'PROCESS_PATH_REGEX',
+  RuleAction.PROCESS_PATH_WILDCARD: 'PROCESS_PATH_WILDCARD',
+  RuleAction.PROCESS_NAME: 'PROCESS_NAME',
+  RuleAction.PROCESS_NAME_REGEX: 'PROCESS_NAME_REGEX',
+  RuleAction.PROCESS_NAME_WILDCARD: 'PROCESS_NAME_WILDCARD',
+  RuleAction.UID: 'UID',
+  RuleAction.NETWORK: 'NETWORK',
+  RuleAction.DSCP: 'DSCP',
+  RuleAction.RULE_SET: 'RULE_SET',
+  RuleAction.AND: 'AND',
+  RuleAction.OR: 'OR',
+  RuleAction.NOT: 'NOT',
+  RuleAction.SUB_RULE: 'SUB_RULE',
+  RuleAction.MATCH: 'MATCH',
 };
 
-_ClashConfigSnippet _$ClashConfigSnippetFromJson(Map<String, dynamic> json) =>
-    _ClashConfigSnippet(
-      proxyGroups:
-          (json['proxy-groups'] as List<dynamic>?)
-              ?.map((e) => ProxyGroup.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          const [],
-      rule: json['rules'] == null ? const [] : _genRule(json['rules'] as List?),
-      ruleProvider: json['rule-providers'] == null
-          ? const []
-          : _genRuleProviders(json['rule-providers'] as Map<String, dynamic>),
-      subRules: json['sub-rules'] == null
-          ? const []
-          : _genSubRules(json['sub-rules'] as Map<String, dynamic>),
-    );
-
-Map<String, dynamic> _$ClashConfigSnippetToJson(_ClashConfigSnippet instance) =>
-    <String, dynamic>{
-      'proxy-groups': instance.proxyGroups,
-      'rules': instance.rule,
-      'rule-providers': instance.ruleProvider,
-      'sub-rules': instance.subRules,
-    };
-
 _ClashConfig _$ClashConfigFromJson(Map<String, dynamic> json) => _ClashConfig(
-  mixedPort: (json['mixed-port'] as num?)?.toInt() ?? defaultMixedPort,
-  socksPort: (json['socks-port'] as num?)?.toInt() ?? 0,
-  port: (json['port'] as num?)?.toInt() ?? 0,
-  redirPort: (json['redir-port'] as num?)?.toInt() ?? 0,
-  tproxyPort: (json['tproxy-port'] as num?)?.toInt() ?? 0,
-  mode: $enumDecodeNullable(_$ModeEnumMap, json['mode']) ?? Mode.rule,
-  allowLan: json['allow-lan'] as bool? ?? false,
-  logLevel:
-      $enumDecodeNullable(_$LogLevelEnumMap, json['log-level']) ??
-      LogLevel.error,
-  ipv6: json['ipv6'] as bool? ?? false,
-  findProcessMode:
-      $enumDecodeNullable(
-        _$FindProcessModeEnumMap,
-        json['find-process-mode'],
-        unknownValue: FindProcessMode.always,
-      ) ??
-      FindProcessMode.always,
-  keepAliveInterval:
-      (json['keep-alive-interval'] as num?)?.toInt() ??
-      defaultKeepAliveInterval,
-  unifiedDelay: json['unified-delay'] as bool? ?? true,
-  tcpConcurrent: json['tcp-concurrent'] as bool? ?? true,
-  tun: json['tun'] == null
-      ? defaultTun
-      : Tun.safeFormJson(json['tun'] as Map<String, Object?>?),
-  dns: json['dns'] == null
-      ? defaultDns
-      : Dns.safeDnsFromJson(json['dns'] as Map<String, Object?>),
-  geoXUrl: json['geox-url'] == null
-      ? defaultGeoXUrl
-      : GeoXUrl.safeFormJson(json['geox-url'] as Map<String, Object?>?),
-  geodataLoader:
-      $enumDecodeNullable(_$GeodataLoaderEnumMap, json['geodata-loader']) ??
-      GeodataLoader.memconservative,
   proxyGroups:
       (json['proxy-groups'] as List<dynamic>?)
           ?.map((e) => ProxyGroup.fromJson(e as Map<String, dynamic>))
           .toList() ??
       const [],
-  rule:
-      (json['rule'] as List<dynamic>?)?.map((e) => e as String).toList() ??
+  rules: json['rules'] == null ? const [] : _genRules(json['rules'] as List?),
+  proxies:
+      (json['proxies'] as List<dynamic>?)
+          ?.map((e) => Proxy.fromJson(e as Map<String, dynamic>))
+          .toList() ??
       const [],
-  globalUa: json['global-ua'] as String?,
-  externalController:
-      $enumDecodeNullable(
-        _$ExternalControllerStatusEnumMap,
-        json['external-controller'],
-      ) ??
-      ExternalControllerStatus.close,
-  hosts:
-      (json['hosts'] as Map<String, dynamic>?)?.map(
+  proxyProviders: json['proxy-providers'] == null
+      ? const []
+      : _genList(json['proxy-providers'] as Map<String, dynamic>),
+  ruleProviders: json['rule-providers'] == null
+      ? const []
+      : _genList(json['rule-providers'] as Map<String, dynamic>),
+  subRules: json['sub-rules'] == null
+      ? const []
+      : _genList(json['sub-rules'] as Map<String, dynamic>),
+  proxyTypeMap:
+      (json['proxyTypeMap'] as Map<String, dynamic>?)?.map(
         (k, e) => MapEntry(k, e as String),
       ) ??
       const {},
 );
 
 Map<String, dynamic> _$ClashConfigToJson(_ClashConfig instance) =>
+    <String, dynamic>{
+      'proxy-groups': instance.proxyGroups,
+      'rules': instance.rules,
+      'proxies': instance.proxies,
+      'proxy-providers': instance.proxyProviders,
+      'rule-providers': instance.ruleProviders,
+      'sub-rules': instance.subRules,
+      'proxyTypeMap': instance.proxyTypeMap,
+    };
+
+_PatchClashConfig _$PatchClashConfigFromJson(Map<String, dynamic> json) =>
+    _PatchClashConfig(
+      mixedPort: (json['mixed-port'] as num?)?.toInt() ?? defaultMixedPort,
+      socksPort: (json['socks-port'] as num?)?.toInt() ?? 0,
+      port: (json['port'] as num?)?.toInt() ?? 0,
+      redirPort: (json['redir-port'] as num?)?.toInt() ?? 0,
+      tproxyPort: (json['tproxy-port'] as num?)?.toInt() ?? 0,
+      mode: $enumDecodeNullable(_$ModeEnumMap, json['mode']) ?? Mode.rule,
+      allowLan: json['allow-lan'] as bool? ?? false,
+      logLevel:
+          $enumDecodeNullable(_$LogLevelEnumMap, json['log-level']) ??
+          LogLevel.error,
+      ipv6: json['ipv6'] as bool? ?? false,
+      findProcessMode:
+          $enumDecodeNullable(
+            _$FindProcessModeEnumMap,
+            json['find-process-mode'],
+            unknownValue: FindProcessMode.off,
+          ) ??
+          FindProcessMode.off,
+      interfaceNameMode:
+          $enumDecodeNullable(
+            _$InterfaceNameModeEnumMap,
+            json['interface-name-mode'],
+            unknownValue: InterfaceNameMode.clear,
+          ) ??
+          InterfaceNameMode.clear,
+      interfaceName: json['interface-name'] as String? ?? '',
+      keepAliveInterval:
+          (json['keep-alive-interval'] as num?)?.toInt() ??
+          defaultKeepAliveInterval,
+      unifiedDelay: json['unified-delay'] as bool? ?? true,
+      tcpConcurrent: json['tcp-concurrent'] as bool? ?? true,
+      tun: json['tun'] == null
+          ? defaultTun
+          : Tun.safeFormJson(json['tun'] as Map<String, Object?>?),
+      dns: json['dns'] == null
+          ? defaultDns
+          : Dns.safeDnsFromJson(json['dns'] as Map<String, Object?>),
+      dnsOverrideKeys: json['dns-override-keys'] == null
+          ? const {}
+          : _dnsOverrideKeysFromJson(json['dns-override-keys'] as List),
+      ntp: json['ntp'] == null
+          ? defaultNtp
+          : Ntp.safeNtpFromJson(json['ntp'] as Map<String, Object?>),
+      ntpOverrideKeys: json['ntp-override-keys'] == null
+          ? const {}
+          : _ntpOverrideKeysFromJson(json['ntp-override-keys'] as List),
+      geoXUrl: json['geox-url'] == null
+          ? defaultGeoXUrl
+          : _geoXUrlFromJson(json['geox-url'] as Map<String, Object?>?),
+      geodataLoader:
+          $enumDecodeNullable(_$GeodataLoaderEnumMap, json['geodata-loader']) ??
+          GeodataLoader.memconservative,
+      globalUa: json['global-ua'] as String?,
+      externalController:
+          $enumDecodeNullable(
+            _$ExternalControllerStatusEnumMap,
+            json['external-controller'],
+          ) ??
+          ExternalControllerStatus.close,
+      hosts:
+          (json['hosts'] as Map<String, dynamic>?)?.map(
+            (k, e) => MapEntry(k, e as String),
+          ) ??
+          const {},
+      geoAutoUpdate: json['geo-auto-update'] as bool? ?? false,
+      geoUpdateInterval: (json['geo-update-interval'] as num?)?.toInt() ?? 24,
+    );
+
+Map<String, dynamic> _$PatchClashConfigToJson(_PatchClashConfig instance) =>
     <String, dynamic>{
       'mixed-port': instance.mixedPort,
       'socks-port': instance.socksPort,
@@ -398,19 +573,29 @@ Map<String, dynamic> _$ClashConfigToJson(_ClashConfig instance) =>
       'log-level': _$LogLevelEnumMap[instance.logLevel]!,
       'ipv6': instance.ipv6,
       'find-process-mode': _$FindProcessModeEnumMap[instance.findProcessMode]!,
+      'interface-name-mode':
+          _$InterfaceNameModeEnumMap[instance.interfaceNameMode]!,
+      'interface-name': instance.interfaceName,
       'keep-alive-interval': instance.keepAliveInterval,
       'unified-delay': instance.unifiedDelay,
       'tcp-concurrent': instance.tcpConcurrent,
       'tun': instance.tun,
       'dns': instance.dns,
-      'geox-url': instance.geoXUrl,
+      'dns-override-keys': instance.dnsOverrideKeys
+          .map((e) => _$DnsOverrideKeyEnumMap[e]!)
+          .toList(),
+      'ntp': instance.ntp,
+      'ntp-override-keys': instance.ntpOverrideKeys
+          .map((e) => _$NtpOverrideKeyEnumMap[e]!)
+          .toList(),
+      'geox-url': _geoXUrlToJson(instance.geoXUrl),
       'geodata-loader': _$GeodataLoaderEnumMap[instance.geodataLoader]!,
-      'proxy-groups': instance.proxyGroups,
-      'rule': instance.rule,
       'global-ua': instance.globalUa,
       'external-controller':
           _$ExternalControllerStatusEnumMap[instance.externalController]!,
       'hosts': instance.hosts,
+      'geo-auto-update': instance.geoAutoUpdate,
+      'geo-update-interval': instance.geoUpdateInterval,
     };
 
 const _$ModeEnumMap = {
@@ -432,6 +617,12 @@ const _$FindProcessModeEnumMap = {
   FindProcessMode.off: 'off',
 };
 
+const _$InterfaceNameModeEnumMap = {
+  InterfaceNameMode.clear: 'clear',
+  InterfaceNameMode.follow: 'follow',
+  InterfaceNameMode.custom: 'custom',
+};
+
 const _$GeodataLoaderEnumMap = {
   GeodataLoader.standard: 'standard',
   GeodataLoader.memconservative: 'memconservative',
@@ -440,4 +631,48 @@ const _$GeodataLoaderEnumMap = {
 const _$ExternalControllerStatusEnumMap = {
   ExternalControllerStatus.close: '',
   ExternalControllerStatus.open: '127.0.0.1:9090',
+};
+
+const _$DnsOverrideKeyEnumMap = {
+  DnsOverrideKey.enable: 'enable',
+  DnsOverrideKey.listen: 'listen',
+  DnsOverrideKey.listenRoutingMark: 'listen-routing-mark',
+  DnsOverrideKey.useHosts: 'use-hosts',
+  DnsOverrideKey.useSystemHosts: 'use-system-hosts',
+  DnsOverrideKey.ipv6: 'ipv6',
+  DnsOverrideKey.ipv6Timeout: 'ipv6-timeout',
+  DnsOverrideKey.respectRules: 'respect-rules',
+  DnsOverrideKey.preferH3: 'prefer-h3',
+  DnsOverrideKey.cacheAlgorithm: 'cache-algorithm',
+  DnsOverrideKey.cacheMaxSize: 'cache-max-size',
+  DnsOverrideKey.enhancedMode: 'enhanced-mode',
+  DnsOverrideKey.fakeIpRange: 'fake-ip-range',
+  DnsOverrideKey.fakeIpRange6: 'fake-ip-range6',
+  DnsOverrideKey.fakeIpFilter: 'fake-ip-filter',
+  DnsOverrideKey.fakeIpFilterMode: 'fake-ip-filter-mode',
+  DnsOverrideKey.fakeIpTtl: 'fake-ip-ttl',
+  DnsOverrideKey.defaultNameserver: 'default-nameserver',
+  DnsOverrideKey.nameserverPolicy: 'nameserver-policy',
+  DnsOverrideKey.nameserver: 'nameserver',
+  DnsOverrideKey.fallback: 'fallback',
+  DnsOverrideKey.fallbackLazyQuery: 'fallback-lazy-query',
+  DnsOverrideKey.proxyServerNameserver: 'proxy-server-nameserver',
+  DnsOverrideKey.proxyServerNameserverPolicy: 'proxy-server-nameserver-policy',
+  DnsOverrideKey.directNameserver: 'direct-nameserver',
+  DnsOverrideKey.directNameserverFollowPolicy:
+      'direct-nameserver-follow-policy',
+  DnsOverrideKey.fallbackFilterGeoip: 'fallback-filter.geoip',
+  DnsOverrideKey.fallbackFilterGeoipCode: 'fallback-filter.geoip-code',
+  DnsOverrideKey.fallbackFilterGeosite: 'fallback-filter.geosite',
+  DnsOverrideKey.fallbackFilterIpcidr: 'fallback-filter.ipcidr',
+  DnsOverrideKey.fallbackFilterDomain: 'fallback-filter.domain',
+};
+
+const _$NtpOverrideKeyEnumMap = {
+  NtpOverrideKey.enable: 'enable',
+  NtpOverrideKey.server: 'server',
+  NtpOverrideKey.port: 'port',
+  NtpOverrideKey.interval: 'interval',
+  NtpOverrideKey.dialerProxy: 'dialer-proxy',
+  NtpOverrideKey.writeToSystem: 'write-to-system',
 };

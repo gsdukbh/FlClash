@@ -125,17 +125,59 @@ const _$LogLevelEnumMap = {
   LogLevel.silent: 'silent',
 };
 
+_DnsQuery _$DnsQueryFromJson(Map<String, dynamic> json) => _DnsQuery(
+  domain: json['domain'] as String,
+  type: json['type'] as String,
+  initiator: $enumDecodeNullable(
+    _$DnsQueryInitiatorEnumMap,
+    json['initiator'],
+    unknownValue: JsonKey.nullForUndefinedEnumValue,
+  ),
+  upstream: json['upstream'] as String? ?? '',
+  cached: json['cached'] as bool? ?? false,
+  answers:
+      (json['answers'] as List<dynamic>?)?.map((e) => e as String).toList() ??
+      const [],
+  rcode: json['rcode'] as String? ?? '',
+  error: json['error'] as String? ?? '',
+  delay: (json['delay'] as num?)?.toInt() ?? 0,
+  time: DateTime.parse(json['time'] as String),
+);
+
+Map<String, dynamic> _$DnsQueryToJson(_DnsQuery instance) => <String, dynamic>{
+  'domain': instance.domain,
+  'type': instance.type,
+  'initiator': _$DnsQueryInitiatorEnumMap[instance.initiator],
+  'upstream': instance.upstream,
+  'cached': instance.cached,
+  'answers': instance.answers,
+  'rcode': instance.rcode,
+  'error': instance.error,
+  'delay': instance.delay,
+  'time': instance.time.toIso8601String(),
+};
+
+const _$DnsQueryInitiatorEnumMap = {
+  DnsQueryInitiator.app: 'app',
+  DnsQueryInitiator.rule: 'rule',
+  DnsQueryInitiator.direct: 'direct',
+  DnsQueryInitiator.proxy: 'proxy',
+  DnsQueryInitiator.other: 'other',
+};
+
 _DAVProps _$DAVPropsFromJson(Map<String, dynamic> json) => _DAVProps(
   uri: json['uri'] as String,
   user: json['user'] as String,
-  password: json['password'] as String,
+  password: json['password'] == null
+      ? ''
+      : _decodeDavPassword(json['password'] as String?),
   fileName: json['fileName'] as String? ?? defaultDavFileName,
 );
 
 Map<String, dynamic> _$DAVPropsToJson(_DAVProps instance) => <String, dynamic>{
   'uri': instance.uri,
   'user': instance.user,
-  'password': instance.password,
+  'password': _encodeDavPassword(instance.password),
   'fileName': instance.fileName,
 };
 
@@ -158,20 +200,8 @@ Map<String, dynamic> _$TrafficToJson(_Traffic instance) => <String, dynamic>{
   'down': instance.down,
 };
 
-_Proxy _$ProxyFromJson(Map<String, dynamic> json) => _Proxy(
-  name: json['name'] as String,
-  type: json['type'] as String,
-  now: json['now'] as String?,
-);
-
-Map<String, dynamic> _$ProxyToJson(_Proxy instance) => <String, dynamic>{
-  'name': instance.name,
-  'type': instance.type,
-  'now': instance.now,
-};
-
 _Group _$GroupFromJson(Map<String, dynamic> json) => _Group(
-  type: $enumDecode(_$GroupTypeEnumMap, json['type']),
+  type: GroupType.parse(json['type'] as String),
   all:
       (json['all'] as List<dynamic>?)
           ?.map((e) => Proxy.fromJson(e as Map<String, dynamic>))
@@ -195,11 +225,11 @@ Map<String, dynamic> _$GroupToJson(_Group instance) => <String, dynamic>{
 };
 
 const _$GroupTypeEnumMap = {
-  GroupType.Selector: 'Selector',
-  GroupType.URLTest: 'URLTest',
-  GroupType.Fallback: 'Fallback',
-  GroupType.LoadBalance: 'LoadBalance',
-  GroupType.Relay: 'Relay',
+  GroupType.Selector: 'select',
+  GroupType.URLTest: 'url-test',
+  GroupType.Fallback: 'fallback',
+  GroupType.LoadBalance: 'load-balance',
+  GroupType.Relay: 'relay',
 };
 
 _HotKeyAction _$HotKeyActionFromJson(Map<String, dynamic> json) =>
@@ -228,6 +258,13 @@ const _$HotActionEnumMap = {
   HotAction.mode: 'mode',
   HotAction.proxy: 'proxy',
   HotAction.tun: 'tun',
+  HotAction.ruleMode: 'ruleMode',
+  HotAction.globalMode: 'globalMode',
+  HotAction.directMode: 'directMode',
+  HotAction.delayTest: 'delayTest',
+  HotAction.updateProfiles: 'updateProfiles',
+  HotAction.copyEnv: 'copyEnv',
+  HotAction.exit: 'exit',
 };
 
 const _$KeyboardModifierEnumMap = {
@@ -243,10 +280,14 @@ _Script _$ScriptFromJson(Map<String, dynamic> json) => _Script(
   id: (json['id'] as num).toInt(),
   label: json['label'] as String,
   lastUpdateTime: DateTime.parse(json['lastUpdateTime'] as String),
+  url: json['url'] as String?,
+  order: (json['order'] as num?)?.toInt(),
 );
 
 Map<String, dynamic> _$ScriptToJson(_Script instance) => <String, dynamic>{
   'id': instance.id,
   'label': instance.label,
   'lastUpdateTime': instance.lastUpdateTime.toIso8601String(),
+  'url': instance.url,
+  'order': instance.order,
 };

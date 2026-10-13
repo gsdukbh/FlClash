@@ -1,17 +1,22 @@
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/enum/enum.dart';
+import 'package:fl_clash/icons/icons.dart';
+import 'package:fl_clash/l10n/l10n.dart';
 import 'package:fl_clash/models/common.dart';
 import 'package:fl_clash/providers/providers.dart';
-import 'package:fl_clash/state.dart';
 import 'package:fl_clash/widgets/dialog.dart';
+import 'package:fl_clash/widgets/inherited.dart';
 import 'package:fl_clash/widgets/null_status.dart';
 import 'package:fl_clash/widgets/pop_scope.dart';
 import 'package:fl_clash/widgets/scaffold.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'effect.dart';
 import 'list.dart';
 import 'theme.dart';
+part 'edit_view.dart';
 
 class OptionsDialog<T> extends StatelessWidget {
   final String title;
@@ -31,7 +36,15 @@ class OptionsDialog<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     return CommonDialog(
       title: title,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+          child: Text(context.appLocalizations.cancel),
+        ),
+      ],
       child: RadioGroup(
         onChanged: (value) {
           Navigator.of(context).pop(value);
@@ -48,12 +61,10 @@ class OptionsDialog<T> extends StatelessWidget {
                     });
                   }
                   return ListItem.radio(
-                    delegate: RadioDelegate(
-                      value: option,
-                      onTab: () {
-                        Navigator.of(context).pop(option);
-                      },
-                    ),
+                    value: option,
+                    onTap: () {
+                      Navigator.of(context).pop(option);
+                    },
                     title: Text(textBuilder(option)),
                   );
                 },
@@ -80,9 +91,137 @@ class CommonCheckBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Checkbox(
-      shape: isCircle ? const CircleBorder() : null,
+      materialTapTargetSize: MaterialTapTargetSize.padded,
+      visualDensity: VisualDensity.standard,
+      shape: isCircle ? AppShape.circle : null,
       value: value,
       onChanged: onChanged,
+    );
+  }
+}
+
+/// The url below the name holds the focus, as the one field that must be filled.
+class NamedUrlDialog extends StatefulWidget {
+  final String title;
+  final String label;
+  final String url;
+  final FormFieldValidator<String>? labelValidator;
+  final FormFieldValidator<String>? urlValidator;
+
+  const NamedUrlDialog({
+    super.key,
+    required this.title,
+    this.label = '',
+    this.url = '',
+    this.labelValidator,
+    this.urlValidator,
+  });
+
+  @override
+  State<NamedUrlDialog> createState() => _NamedUrlDialogState();
+}
+
+class _NamedUrlDialogState extends State<NamedUrlDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _urlFocusNode = FocusNode();
+  late final TextEditingController _labelController;
+  late final TextEditingController _urlController;
+
+  @override
+  void initState() {
+    super.initState();
+    _labelController = TextEditingController(text: widget.label);
+    _urlController = TextEditingController(text: widget.url);
+  }
+
+  @override
+  void dispose() {
+    _urlFocusNode.dispose();
+    _labelController.dispose();
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  String? _validateUrl(String? value) {
+    final validator = widget.urlValidator;
+    if (validator != null) {
+      return validator(value);
+    }
+    final appLocalizations = context.appLocalizations;
+    final url = value?.trim() ?? '';
+    if (url.isEmpty) {
+      return appLocalizations.emptyTip(appLocalizations.url);
+    }
+    if (!url.isUrl) {
+      return appLocalizations.urlTip(appLocalizations.url);
+    }
+    return null;
+  }
+
+  void _handleSubmit() {
+    if (_formKey.currentState?.validate() == false) {
+      return;
+    }
+    Navigator.of(context).pop<({String label, String url})>((
+      label: _labelController.text.trim(),
+      url: _urlController.text.trim(),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appLocalizations = context.appLocalizations;
+    return CommonDialog(
+      title: widget.title,
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+          child: Text(appLocalizations.cancel),
+        ),
+        TextButton(
+          onPressed: _handleSubmit,
+          child: Text(appLocalizations.submit),
+        ),
+      ],
+      child: Form(
+        key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        child: Wrap(
+          runSpacing: 16,
+          children: [
+            TextFormField(
+              controller: _labelController,
+              validator: widget.labelValidator,
+              textInputAction: TextInputAction.next,
+              inputFormatters: TextInputLimits.limit(TextInputLimits.name),
+              onFieldSubmitted: (_) {
+                _urlFocusNode.requestFocus();
+              },
+              decoration: InputDecoration(
+                labelText: appLocalizations.name,
+                helperText: appLocalizations.optional,
+              ),
+            ),
+            TextFormField(
+              autofocus: true,
+              focusNode: _urlFocusNode,
+              controller: _urlController,
+              validator: _validateUrl,
+              keyboardType: TextInputType.url,
+              minLines: 1,
+              maxLines: 5,
+              textInputAction: TextInputAction.done,
+              inputFormatters: TextInputLimits.limit(TextInputLimits.url),
+              onFieldSubmitted: (_) {
+                _handleSubmit();
+              },
+              decoration: InputDecoration(labelText: appLocalizations.url),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -97,6 +236,9 @@ class InputDialog extends StatefulWidget {
   final FormFieldValidator<String>? validator;
   final AutovalidateMode? autovalidateMode;
   final bool? obscureText;
+  final int? maxLength;
+  final List<TextInputFormatter>? inputFormatters;
+  final TextInputType? keyboardType;
 
   const InputDialog({
     super.key,
@@ -108,6 +250,9 @@ class InputDialog extends StatefulWidget {
     this.validator,
     this.obscureText,
     this.labelText,
+    this.maxLength,
+    this.inputFormatters,
+    this.keyboardType,
     this.autovalidateMode = AutovalidateMode.onUserInteraction,
   });
 
@@ -153,6 +298,7 @@ class _InputDialogState extends State<InputDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final appLocalizations = context.appLocalizations;
     return CommonDialog(
       title: title,
       actions: [
@@ -162,8 +308,13 @@ class _InputDialogState extends State<InputDialog> {
             onPressed: _handleReset,
             child: Text(appLocalizations.reset),
           ),
-          const SizedBox(width: 4),
-        ],
+        ] else
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: Text(appLocalizations.cancel),
+          ),
         TextButton(
           onPressed: _handleUpdate,
           child: Text(appLocalizations.submit),
@@ -176,8 +327,10 @@ class _InputDialogState extends State<InputDialog> {
           runSpacing: 16,
           children: [
             TextFormField(
+              maxLength: widget.maxLength,
+              inputFormatters: widget.inputFormatters,
               obscureText: widget.obscureText ?? false,
-              keyboardType: TextInputType.url,
+              keyboardType: widget.keyboardType ?? TextInputType.url,
               maxLines: widget.obscureText == true ? 1 : 5,
               minLines: 1,
               controller: _textController,
@@ -185,7 +338,6 @@ class _InputDialogState extends State<InputDialog> {
                 _handleUpdate();
               },
               decoration: InputDecoration(
-                border: const OutlineInputBorder(),
                 suffixText: suffixText,
                 hintText: widget.hintText,
                 labelText: widget.labelText,
@@ -199,529 +351,66 @@ class _InputDialogState extends State<InputDialog> {
   }
 }
 
-class ListInputPage extends ConsumerStatefulWidget {
-  final String title;
-  final List<String> items;
-  final Widget Function(String item) titleBuilder;
-  final Widget Function(String item)? subtitleBuilder;
-  final Widget Function(String item)? leadingBuilder;
-  final String? valueLabel;
+class BatchInput<T> {
+  final String label;
+  final String formatTip;
+  final ParsedInput<T> Function(String text) parse;
+  final String Function(InputIssue issue) issueMessage;
 
-  const ListInputPage({
-    super.key,
-    required this.title,
-    required this.items,
-    required this.titleBuilder,
-    this.leadingBuilder,
-    this.valueLabel,
-    this.subtitleBuilder,
+  const BatchInput({
+    required this.label,
+    required this.formatTip,
+    required this.parse,
+    required this.issueMessage,
   });
-
-  @override
-  ConsumerState createState() => _ListInputPageState();
 }
 
-class _ListInputPageState extends ConsumerState<ListInputPage> {
-  List<String> _items = [];
-  late List<String> _originItems;
-  final _key = utils.id;
-
-  @override
-  void initState() {
-    super.initState();
-    _items = widget.items;
-    _originItems = List<String>.from(_items);
-  }
-
-  void _handleReorder(int oldIndex, newIndex) {
-    if (oldIndex < newIndex) {
-      newIndex -= 1;
-    }
-    final nextItems = List<String>.from(_items);
-    final item = nextItems.removeAt(oldIndex);
-    nextItems.insert(newIndex, item);
-    _items = nextItems;
-    setState(() {});
-  }
-
-  void _handleSelected(String value) {
-    ref.read(selectedItemsProvider(_key).notifier).update((state) {
-      final newState = Set<String>.from(state)..addOrRemove(value);
-      return newState;
-    });
-  }
-
-  void _handleSelectAll() {
-    final ids = _items.toSet();
-    ref.read(selectedItemsProvider(_key).notifier).update((selected) {
-      return selected.containsAll(ids) ? {} : ids;
-    });
-  }
-
-  Future<void> _handleAddOrEdit([String? item]) async {
-    uniqueValidator(String? value) {
-      final index = _items.indexWhere((entry) {
-        return entry == value;
-      });
-      final current = item == value;
-      if (index != -1 && !current) {
-        return appLocalizations.existsTip(appLocalizations.value);
-      }
-      return null;
-    }
-
-    final value = await globalState.showCommonDialog<String>(
-      child: AddDialog(
-        valueField: Field(
-          label: widget.valueLabel ?? appLocalizations.value,
-          value: item ?? '',
-          validator: uniqueValidator,
-        ),
-        title: item != null ? appLocalizations.edit : appLocalizations.add,
-      ),
-    );
-
-    if (value == null) return;
-    final index = _items.indexWhere((entry) {
-      return entry == item;
-    });
-    final nextItems = List<String>.from(_items);
-    if (item != null) {
-      nextItems[index] = value;
-    } else {
-      nextItems.add(value);
-    }
-    _items = nextItems;
-    setState(() {});
-  }
-
-  void _handleDelete() {
-    final selectedItems = ref.read(selectedItemsProvider(_key));
-    final newItems = _items
-        .where((item) => !selectedItems.contains(item))
-        .toList();
-    _items = newItems;
-    ref.read(selectedItemsProvider(_key).notifier).value = {};
-    setState(() {});
-  }
-
-  Future<void> _handleReset() async {
-    final res = await globalState.showMessage(
-      message: TextSpan(text: appLocalizations.resetPageChangesTip),
-    );
-    if (res != true) {
-      return;
-    }
-    _items = _originItems;
-    setState(() {});
-  }
-
-  Widget _buildItem({
-    required String value,
-    required int index,
-    required int totalLength,
-    required bool isSelected,
-    required bool isEditing,
-    isDecorator = false,
-  }) {
-    final isFirst = index == 0;
-    final isLast = index == totalLength - 1;
-    return ReorderableDelayedDragStartListener(
-      key: ValueKey(value),
-      index: index,
-      child: CommonSelectedInputListItem(
-        isDecorator: isDecorator,
-        isLast: isLast,
-        isFirst: isFirst,
-        title: widget.titleBuilder(value),
-        isSelected: isSelected,
-        isEditing: isEditing,
-        onSelected: () {
-          _handleSelected(value);
-        },
-        onPressed: () {
-          _handleAddOrEdit(value);
-        },
-        leading: widget.leadingBuilder != null
-            ? widget.leadingBuilder!(value)
-            : null,
-        subtitle: widget.subtitleBuilder != null
-            ? widget.subtitleBuilder!(value)
-            : null,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final selectedItems = ref.watch(selectedItemsProvider(_key));
-    return CommonPopScope(
-      onPop: (_) {
-        if (selectedItems.isNotEmpty) {
-          ref.read(selectedItemsProvider(_key).notifier).value = {};
-          return false;
-        }
-        Navigator.of(context).pop(_items);
-        return false;
-      },
-      child: CommonScaffold(
-        title: widget.title,
-        actions: [
-          if (selectedItems.isNotEmpty) ...[
-            CommonMinIconButtonTheme(
-              child: IconButton.filledTonal(
-                onPressed: _handleDelete,
-                icon: Icon(Icons.delete),
-              ),
-            ),
-            SizedBox(width: 2),
-          ] else if (!stringListEquality.equals(_items, _originItems)) ...[
-            CommonMinIconButtonTheme(
-              child: IconButton.filledTonal(
-                onPressed: _handleReset,
-                icon: const Icon(Icons.replay),
-              ),
-            ),
-            SizedBox(width: 2),
-          ],
-          CommonMinFilledButtonTheme(
-            child: selectedItems.isNotEmpty
-                ? FilledButton(
-                    onPressed: _handleSelectAll,
-                    child: Text(appLocalizations.selectAll),
-                  )
-                : FilledButton.tonal(
-                    onPressed: () {
-                      _handleAddOrEdit();
-                    },
-                    child: Text(appLocalizations.add),
-                  ),
-          ),
-          SizedBox(width: 8),
-        ],
-        body: _items.isEmpty
-            ? NullStatus(label: appLocalizations.noData)
-            : ReorderableListView.builder(
-                padding: const EdgeInsets.only(
-                  bottom: 16 + 64,
-                  top: 16,
-                  left: 16,
-                  right: 16,
-                ),
-                buildDefaultDragHandles: false,
-                itemCount: _items.length,
-                itemBuilder: (context, index) {
-                  final value = _items[index];
-                  return _buildItem(
-                    value: value,
-                    index: index,
-                    totalLength: _items.length,
-                    isSelected: selectedItems.contains(value),
-                    isEditing: selectedItems.isNotEmpty,
-                  );
-                },
-                proxyDecorator: (child, index, animation) {
-                  final value = _items[index];
-                  return commonProxyDecorator(
-                    _buildItem(
-                      value: value,
-                      index: index,
-                      totalLength: _items.length,
-                      isDecorator: true,
-                      isSelected: selectedItems.contains(value),
-                      isEditing: selectedItems.isNotEmpty,
-                    ),
-                    index,
-                    animation,
-                  );
-                },
-                onReorder: _handleReorder,
-              ),
-      ),
-    );
-  }
-}
-
-class MapInputPage extends ConsumerStatefulWidget {
-  final String title;
-  final Map<String, String> map;
-  final Widget Function(MapEntry<String, String> item) titleBuilder;
-  final Widget Function(MapEntry<String, String> item)? subtitleBuilder;
-  final Widget Function(MapEntry<String, String> item)? leadingBuilder;
-  final String? keyLabel;
-  final String? valueLabel;
-
-  const MapInputPage({
-    super.key,
-    required this.title,
-    required this.map,
-    required this.titleBuilder,
-    this.leadingBuilder,
-    this.keyLabel,
-    this.valueLabel,
-    this.subtitleBuilder,
-  });
-
-  @override
-  ConsumerState<MapInputPage> createState() => _MapInputPageState();
-}
-
-class _MapInputPageState extends ConsumerState<MapInputPage> {
-  List<MapEntry<String, String>> _items = [];
-  late final List<MapEntry<String, String>> _originItems;
-  final _key = utils.id;
-
-  @override
-  void initState() {
-    super.initState();
-    _items = List<MapEntry<String, String>>.from(widget.map.entries);
-    _originItems = List<MapEntry<String, String>>.from(_items);
-  }
-
-  void _handleReorder(int oldIndex, newIndex) {
-    if (oldIndex < newIndex) {
-      newIndex -= 1;
-    }
-    final nextItems = List<MapEntry<String, String>>.from(_items);
-    final item = nextItems.removeAt(oldIndex);
-    nextItems.insert(newIndex, item);
-    _items = nextItems;
-    setState(() {});
-  }
-
-  void _handleSelected(MapEntry<String, String> value) {
-    ref.read(selectedItemsProvider(_key).notifier).update((state) {
-      final newState = Set<String>.from(state)..addOrRemove(value.key);
-      return newState;
-    });
-  }
-
-  void _handleSelectAll() {
-    final ids = _items.map((item) => item.key).toSet();
-    ref.read(selectedItemsProvider(_key).notifier).update((selected) {
-      return selected.containsAll(ids) ? {} : ids;
-    });
-  }
-
-  Future<void> _handleAddOrEdit([MapEntry<String, String>? item]) async {
-    uniqueValidator(String? value) {
-      final index = _items.indexWhere((entry) {
-        return entry.key == value;
-      });
-      final current = item?.key == value;
-      if (index != -1 && !current) {
-        return appLocalizations.existsTip(appLocalizations.key);
-      }
-      return null;
-    }
-
-    final keyField = Field(
-      label: widget.keyLabel ?? appLocalizations.key,
-      value: item == null ? '' : item.key,
-      validator: uniqueValidator,
-    );
-
-    final valueField = Field(
-      label: widget.valueLabel ?? appLocalizations.value,
-      value: item == null ? '' : item.value,
-    );
-
-    final value = await globalState.showCommonDialog<MapEntry<String, String>>(
-      child: AddDialog(
-        keyField: keyField,
-        valueField: valueField,
-        title: item != null ? appLocalizations.edit : appLocalizations.add,
-      ),
-    );
-    if (value == null) return;
-    final index = _items.indexWhere((entry) {
-      return entry.key == item?.key;
-    });
-
-    final nextItems = List<MapEntry<String, String>>.from(_items);
-    if (item != null) {
-      nextItems[index] = value;
-    } else {
-      nextItems.add(value);
-    }
-    _items = nextItems;
-    setState(() {});
-  }
-
-  void _handleDelete() {
-    final selectedItems = ref.read(selectedItemsProvider(_key));
-    final newItems = _items
-        .where((item) => !selectedItems.contains(item.key))
-        .toList();
-    _items = newItems;
-    ref.read(selectedItemsProvider(_key).notifier).value = {};
-    setState(() {});
-  }
-
-  Future<void> _handleReset() async {
-    final res = await globalState.showMessage(
-      message: TextSpan(text: appLocalizations.resetPageChangesTip),
-    );
-    if (res != true) {
-      return;
-    }
-    _items = _originItems;
-    setState(() {});
-  }
-
-  Widget _buildItem({
-    required MapEntry<String, String> value,
-    required int index,
-    required int totalLength,
-    required bool isSelected,
-    required bool isEditing,
-    isDecorator = false,
-  }) {
-    final isFirst = index == 0;
-    final isLast = index == totalLength - 1;
-    return ReorderableDelayedDragStartListener(
-      key: ValueKey(value),
-      index: index,
-      child: CommonSelectedInputListItem(
-        isDecorator: isDecorator,
-        isLast: isLast,
-        isFirst: isFirst,
-        title: widget.titleBuilder(value),
-        leading: widget.leadingBuilder != null
-            ? widget.leadingBuilder!(value)
-            : null,
-        subtitle: widget.subtitleBuilder != null
-            ? widget.subtitleBuilder!(value)
-            : null,
-        isSelected: isSelected,
-        isEditing: isEditing,
-        onSelected: () {
-          _handleSelected(value);
-        },
-        onPressed: () {
-          _handleAddOrEdit(value);
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final selectedItems = ref.watch(selectedItemsProvider(_key));
-    return CommonPopScope(
-      onPop: (_) {
-        if (selectedItems.isNotEmpty) {
-          ref.read(selectedItemsProvider(_key).notifier).value = {};
-          return false;
-        }
-        Navigator.of(context).pop(Map<String, String>.fromEntries(_items));
-        return false;
-      },
-      child: CommonScaffold(
-        title: widget.title,
-        actions: [
-          if (selectedItems.isNotEmpty) ...[
-            CommonMinIconButtonTheme(
-              child: IconButton.filledTonal(
-                onPressed: _handleDelete,
-                icon: Icon(Icons.delete),
-              ),
-            ),
-            SizedBox(width: 2),
-          ] else if (!stringAndStringMapEntryListEquality.equals(
-            _items,
-            _originItems,
-          )) ...[
-            CommonMinIconButtonTheme(
-              child: IconButton.filledTonal(
-                onPressed: _handleReset,
-                icon: const Icon(Icons.replay),
-              ),
-            ),
-            SizedBox(width: 2),
-          ],
-          CommonMinFilledButtonTheme(
-            child: selectedItems.isNotEmpty
-                ? FilledButton(
-                    onPressed: _handleSelectAll,
-                    child: Text(appLocalizations.selectAll),
-                  )
-                : FilledButton.tonal(
-                    onPressed: () {
-                      _handleAddOrEdit();
-                    },
-                    child: Text(appLocalizations.add),
-                  ),
-          ),
-          SizedBox(width: 8),
-        ],
-        body: _items.isEmpty
-            ? NullStatus(label: appLocalizations.noData)
-            : ReorderableListView.builder(
-                padding: const EdgeInsets.only(
-                  bottom: 16 + 64,
-                  top: 16,
-                  left: 16,
-                  right: 16,
-                ),
-                buildDefaultDragHandles: false,
-                itemCount: _items.length,
-                itemBuilder: (context, index) {
-                  final value = _items[index];
-                  return _buildItem(
-                    value: value,
-                    index: index,
-                    totalLength: _items.length,
-                    isSelected: selectedItems.contains(value.key),
-                    isEditing: selectedItems.isNotEmpty,
-                  );
-                },
-                proxyDecorator: (child, index, animation) {
-                  final value = _items[index];
-                  return commonProxyDecorator(
-                    _buildItem(
-                      value: value,
-                      index: index,
-                      totalLength: _items.length,
-                      isDecorator: true,
-                      isSelected: selectedItems.contains(value.key),
-                      isEditing: selectedItems.isNotEmpty,
-                    ),
-                    index,
-                    animation,
-                  );
-                },
-                onReorder: _handleReorder,
-              ),
-      ),
-    );
-  }
-}
-
-class AddDialog extends StatefulWidget {
+/// Pops a list so a single entry and a batch return through the same path.
+class EntryDialog<T> extends StatefulWidget {
   final String title;
   final Field? keyField;
   final Field valueField;
+  final int? keyMaxLength;
+  final int? valueMaxLength;
+  final T Function(String? key, String value) toEntry;
+  final BatchInput<T>? batch;
 
-  const AddDialog({
+  const EntryDialog({
     super.key,
     required this.title,
     this.keyField,
     required this.valueField,
+    this.keyMaxLength,
+    this.valueMaxLength,
+    required this.toEntry,
+    this.batch,
   });
 
   @override
-  State<AddDialog> createState() => _AddDialogState();
+  State<EntryDialog<T>> createState() => _EntryDialogState<T>();
 }
 
-class _AddDialogState extends State<AddDialog> {
+class _EntryDialogState<T> extends State<EntryDialog<T>> {
+  static const _maxShownIssues = 3;
+
   TextEditingController? _keyController;
-  late TextEditingController _valueController;
+  late final TextEditingController _valueController;
+  final _batchController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  bool _isBatch = false;
+  ParsedInput<T>? _parsed;
 
   Field? get keyField => widget.keyField;
 
   Field get valueField => widget.valueField;
+
+  bool get _canSubmit {
+    if (!_isBatch) {
+      return true;
+    }
+    final parsed = _parsed;
+    return parsed != null && parsed.isValid && parsed.entries.isNotEmpty;
+  }
 
   @override
   void initState() {
@@ -732,89 +421,232 @@ class _AddDialogState extends State<AddDialog> {
     _valueController = TextEditingController(text: valueField.value);
   }
 
+  void _toggleBatch() {
+    setState(() {
+      _isBatch = !_isBatch;
+      if (_isBatch && _batchController.text.isEmpty) {
+        _batchController.text = [_keyController?.text, _valueController.text]
+            .nonNulls
+            .map((text) => text.trim())
+            .where((t) => t.isNotEmpty)
+            .join(' ');
+      }
+      if (_isBatch) {
+        _parsed = widget.batch!.parse(_batchController.text);
+      }
+    });
+  }
+
+  void _handleBatchChanged(String text) {
+    setState(() {
+      _parsed = widget.batch!.parse(text);
+    });
+  }
+
   void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-    if (keyField != null) {
-      Navigator.of(context).pop<MapEntry<String, String>>(
-        MapEntry(_keyController!.text, _valueController.text),
-      );
-    } else {
-      Navigator.of(context).pop<String>(_valueController.text);
+    if (!_canSubmit) return;
+    if (_isBatch) {
+      Navigator.of(context).pop<List<T>>(_parsed!.entries);
+      return;
     }
+    if (!_formKey.currentState!.validate()) return;
+    Navigator.of(context).pop<List<T>>([
+      widget.toEntry(_keyController?.text, _valueController.text),
+    ]);
   }
 
   @override
   void dispose() {
     _keyController?.dispose();
     _valueController.dispose();
+    _batchController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return CommonDialog(
-      title: widget.title,
-      actions: [
-        TextButton(onPressed: _submit, child: Text(appLocalizations.confirm)),
-      ],
-      child: Form(
-        autovalidateMode: AutovalidateMode.onUserInteraction,
-        key: _formKey,
-        child: Wrap(
-          runSpacing: 16,
-          children: [
-            if (keyField != null)
-              TextFormField(
-                maxLines: 3,
-                minLines: 1,
-                controller: _keyController,
-                decoration: InputDecoration(
-                  border: const OutlineInputBorder(),
-                  labelText: keyField!.label,
-                ),
-                validator: (String? value) {
-                  String? res;
-                  if (keyField!.validator != null) {
-                    res = keyField!.validator!(value);
-                  }
-                  if (res != null) {
-                    return res;
-                  }
-                  if (value == null || value.isEmpty) {
-                    return appLocalizations.emptyTip(appLocalizations.key);
-                  }
-                  return null;
-                },
-              ),
+  String? _batchErrorText(AppLocalizations appLocalizations) {
+    final parsed = _parsed;
+    if (parsed == null || parsed.isValid) {
+      return null;
+    }
+    return parsed.issues
+        .take(_maxShownIssues)
+        .map(
+          (issue) => appLocalizations.lineIssueTip(
+            issue.line,
+            widget.batch!.issueMessage(issue),
+          ),
+        )
+        .join('\n');
+  }
+
+  String _batchHelperText(AppLocalizations appLocalizations) {
+    final parsed = _parsed;
+    if (parsed == null || _batchController.text.trim().isEmpty) {
+      return widget.batch!.formatTip;
+    }
+    return appLocalizations.batchPreviewTip(
+      parsed.entries.length,
+      parsed.skippedExisting,
+    );
+  }
+
+  Widget _buildBatchField(AppLocalizations appLocalizations) {
+    return TextField(
+      controller: _batchController,
+      autofocus: true,
+      minLines: 4,
+      maxLines: 10,
+      keyboardType: TextInputType.multiline,
+      onChanged: _handleBatchChanged,
+      decoration: InputDecoration(
+        labelText: widget.batch!.label,
+        alignLabelWithHint: true,
+        helperText: _batchHelperText(appLocalizations),
+        helperMaxLines: 2,
+        errorText: _batchErrorText(appLocalizations),
+        errorMaxLines: _maxShownIssues + 1,
+      ),
+    );
+  }
+
+  Widget _buildForm(AppLocalizations appLocalizations) {
+    return Form(
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      key: _formKey,
+      child: Wrap(
+        runSpacing: 16,
+        children: [
+          if (keyField != null)
             TextFormField(
               maxLines: 3,
               minLines: 1,
-              keyboardType: TextInputType.text,
-              controller: _valueController,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                labelText: valueField.label,
-              ),
-              onFieldSubmitted: (_) {
-                _submit();
-              },
+              inputFormatters: widget.keyMaxLength == null
+                  ? null
+                  : TextInputLimits.limit(widget.keyMaxLength!),
+              controller: _keyController,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(labelText: keyField!.label),
               validator: (String? value) {
                 String? res;
-                if (valueField.validator != null) {
-                  res = valueField.validator!(value);
+                if (keyField!.validator != null) {
+                  res = keyField!.validator!(value);
                 }
                 if (res != null) {
                   return res;
                 }
                 if (value == null || value.isEmpty) {
-                  return appLocalizations.emptyTip(appLocalizations.value);
+                  return appLocalizations.emptyTip(appLocalizations.key);
                 }
                 return null;
               },
             ),
-          ],
-        ),
+          TextFormField(
+            maxLines: 3,
+            minLines: 1,
+            inputFormatters: widget.valueMaxLength == null
+                ? null
+                : TextInputLimits.limit(widget.valueMaxLength!),
+            keyboardType: TextInputType.text,
+            controller: _valueController,
+            decoration: InputDecoration(labelText: valueField.label),
+            onFieldSubmitted: (_) {
+              _submit();
+            },
+            validator: (String? value) {
+              String? res;
+              if (valueField.validator != null) {
+                res = valueField.validator!(value);
+              }
+              if (res != null) {
+                return res;
+              }
+              if (value == null || value.isEmpty) {
+                return appLocalizations.emptyTip(appLocalizations.value);
+              }
+              return null;
+            },
+          ),
+        ],
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final appLocalizations = context.appLocalizations;
+    return CommonDialog(
+      title: _isBatch ? appLocalizations.batchAdd : widget.title,
+      trailing: widget.batch == null
+          ? null
+          : CommonMinIconButtonTheme(
+              child: IconButton(
+                tooltip: _isBatch
+                    ? appLocalizations.singleAdd
+                    : appLocalizations.batchAdd,
+                onPressed: _toggleBatch,
+                icon: GlyphIcon(
+                  _isBatch ? AppGlyphs.textShort : AppGlyphs.listAdd,
+                ),
+              ),
+            ),
+      actions: [
+        TextButton(
+          onPressed: _canSubmit ? _submit : null,
+          child: Text(appLocalizations.confirm),
+        ),
+      ],
+      child: _isBatch
+          ? _buildBatchField(appLocalizations)
+          : _buildForm(appLocalizations),
+    );
+  }
+}
+
+class NoInputBorder extends InputBorder {
+  const NoInputBorder() : super(borderSide: BorderSide.none);
+
+  @override
+  NoInputBorder copyWith({BorderSide? borderSide}) => const NoInputBorder();
+
+  @override
+  bool get isOutline => false;
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
+
+  @override
+  NoInputBorder scale(double t) => const NoInputBorder();
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) {
+    return Path()..addRect(rect);
+  }
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
+    return Path()..addRect(rect);
+  }
+
+  @override
+  void paintInterior(
+    Canvas canvas,
+    Rect rect,
+    Paint paint, {
+    TextDirection? textDirection,
+  }) {
+    canvas.drawRect(rect, paint);
+  }
+
+  @override
+  bool get preferPaintInterior => true;
+
+  @override
+  void paint(
+    Canvas canvas,
+    Rect rect, {
+    double? gapStart,
+    double gapExtent = 0.0,
+    double gapPercentage = 0.0,
+    TextDirection? textDirection,
+  }) {}
 }

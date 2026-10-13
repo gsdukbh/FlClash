@@ -11,98 +11,99 @@ import androidx.core.content.getSystemService
 import com.follow.clash.common.Components
 import com.follow.clash.common.GlobalState
 import com.follow.clash.common.QuickAction
+import com.follow.clash.common.ensureNotificationChannel
 import com.follow.clash.common.quickIntent
 import com.follow.clash.common.receiveBroadcastFlow
 import com.follow.clash.common.startForeground
-import com.follow.clash.common.tickerFlow
 import com.follow.clash.common.toPendingIntent
 import com.follow.clash.core.Core
 import com.follow.clash.service.R
-import com.follow.clash.service.State
+import com.follow.clash.service.ServiceConfig
 import com.follow.clash.service.models.NotificationParams
 import com.follow.clash.service.models.getSpeedTrafficText
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 
-data class ExtendedNotificationParams(
+private data class ExtendedNotificationParams(
     val title: String,
     val stopText: String,
-    val onlyStatisticsProxy: Boolean,
+    val showStopAction: Boolean,
     val contentText: String,
 )
 
-val NotificationParams.extended: ExtendedNotificationParams
+private val NotificationParams.extended: ExtendedNotificationParams
     get() = ExtendedNotificationParams(
-        title, stopText, onlyStatisticsProxy, Core.getSpeedTrafficText(onlyStatisticsProxy)
+        title,
+        stopText,
+        showStopAction,
+        Core.getSpeedTrafficText(onlyStatisticsProxy),
     )
 
-class NotificationModule(private val service: Service) : Module() {
-    private val scope = CoroutineScope(Dispatchers.Default)
-
-    override fun onInstall() {
+internal class NotificationModule(
+    private val service: Service,
+    private val scope: CoroutineScope,
+) : ServiceModule {
+    override fun start() {
+        service.ensureNotificationChannel()
+        update(ServiceConfig.notificationParams.value.extended)
         scope.launch {
-            val screenFlow = service.receiveBroadcastFlow {
+            service.receiveBroadcastFlow {
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_SCREEN_OFF)
             }.map { intent ->
                 intent.action == Intent.ACTION_SCREEN_ON
             }.onStart {
                 emit(isScreenOn())
-            }
-
-            combine(
-                tickerFlow(1000, 0), State.notificationParamsFlow, screenFlow
-            ) { _, params, screenOn ->
-                params?.extended to screenOn
-            }.filter { (params, screenOn) -> params != null && screenOn }
-                .distinctUntilChanged { old, new -> old.first == new.first && old.second == new.second }
-                .collect { (params, _) ->
-                    update(params!!)
-                }
-
-            State.notificationParamsFlow.value?.let {
-                update(it.extended)
-            } ?: run {
-                update(NotificationParams().extended)
+            }.distinctUntilChanged().collectLatest { screenOn ->
+                if (!screenOn) return@collectLatest
+                combine(
+                    flow {
+                        while (true) {
+                            delay(1_000)
+                            emit(Unit)
+                        }
+                    },
+                    ServiceConfig.notificationParams,
+                ) { _, params ->
+                    params.extended
+                }.distinctUntilChanged()
+                    .collect(::update)
             }
         }
     }
 
-    private fun isScreenOn(): Boolean {
-        val pm = service.getSystemService<PowerManager>()
-        return when (pm != null) {
-            true -> pm.isInteractive
-            false -> true
-        }
-    }
+    private fun isScreenOn() =
+        service.getSystemService<PowerManager>()?.isInteractive ?: true
 
     private val notificationBuilder: NotificationCompat.Builder by lazy {
-        val intent = Intent().setComponent(Components.MAIN_ACTIVITY)
-        with(
-            NotificationCompat.Builder(
-                service, GlobalState.NOTIFICATION_CHANNEL
-            )
-        ) {
-            setSmallIcon(R.drawable.ic)
+        val intent = Intent().setComponent(Components.mainActivity)
+
+        NotificationCompat.Builder(
+            service,
+            GlobalState.NOTIFICATION_CHANNEL,
+        ).apply {
+            setSmallIcon(R.drawable.ic_service)
             setContentTitle("FlClash")
             setContentIntent(intent.toPendingIntent)
-            setPriority(NotificationCompat.PRIORITY_HIGH)
+            setPriority(NotificationCompat.PRIORITY_LOW)
             setCategory(NotificationCompat.CATEGORY_SERVICE)
+            setOngoing(true)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 foregroundServiceBehavior = FOREGROUND_SERVICE_IMMEDIATE
             }
-            setOngoing(true)
             setShowWhen(true)
             setOnlyAlertOnce(true)
         }
     }
+
+    private val stopIntent by lazy { QuickAction.STOP.quickIntent.toPendingIntent }
 
     private fun update(params: ExtendedNotificationParams) {
         service.startForeground(
@@ -110,18 +111,20 @@ class NotificationModule(private val service: Service) : Module() {
                 setContentTitle(params.title)
                 setContentText(params.contentText)
                 clearActions()
-                addAction(
-                    0, params.stopText, QuickAction.STOP.quickIntent.toPendingIntent
-                ).build()
-            })
+                if (params.showStopAction) {
+                    addAction(0, params.stopText, stopIntent)
+                }
+                build()
+            },
+        )
     }
 
-    override fun onUninstall() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+    @Suppress("DEPRECATION")
+    override fun stop() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             service.stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
             service.stopForeground(true)
         }
-        scope.cancel()
     }
 }
