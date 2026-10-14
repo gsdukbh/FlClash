@@ -26,6 +26,11 @@ on:
         required: false
         default: false
         type: boolean
+      release_tag:
+        description: 'Release 标签 (例如 v0.8.99-custom，留空则自动按版本号和构建号生成，避免生成 main 标签)'
+        required: false
+        default: ''
+        type: string
       remove_firebase:
         description: '是否完全移除 Google Firebase (Analytics 与 Crashlytics)'
         required: false
@@ -64,12 +69,21 @@ jobs:
             echo "BUILD_ARCH=${{ inputs.build_arch }}" >> $GITHUB_ENV
             echo "DO_RELEASE=${{ inputs.create_release }}" >> $GITHUB_ENV
             echo "REMOVE_FIREBASE=${{ inputs.remove_firebase }}" >> $GITHUB_ENV
+
+            if [ -n "${{ inputs.release_tag }}" ]; then
+              TAG_NAME="${{ inputs.release_tag }}"
+            else
+              APP_VER=$(grep '^version:' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1)
+              TAG_NAME="v${APP_VER}-custom.${{ github.run_number }}"
+            fi
+            echo "RELEASE_TAG=$TAG_NAME" >> $GITHUB_ENV
           else
             echo "PKG_NAME=com.custom.flclash" >> $GITHUB_ENV
             echo "APP_NAME=FlClash" >> $GITHUB_ENV
             echo "BUILD_ARCH=arm64-v8a" >> $GITHUB_ENV
             echo "DO_RELEASE=true" >> $GITHUB_ENV
             echo "REMOVE_FIREBASE=true" >> $GITHUB_ENV
+            echo "RELEASE_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
           fi
 
       - name: Setup Java 17
@@ -264,7 +278,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ./dist/*
-          tag_name: ${{ github.ref_name || format('v-custom-{0}', github.run_id) }}
+          tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ format('{0} ({1})', env.APP_NAME, env.PKG_NAME) }}
           body: |
             ### 自定义版本构建完成
