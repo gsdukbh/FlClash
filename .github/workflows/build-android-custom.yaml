@@ -137,74 +137,11 @@ jobs:
       - name: Apply Customizations and Remove Firebase
         run: |
           echo "Applying customizations: Package Name = $PKG_NAME, App Name = $APP_NAME, Remove Firebase = $REMOVE_FIREBASE"
-          sed -i "s/applicationId = \"com.follow.clash\"/applicationId = \"$PKG_NAME\"/g" android/app/build.gradle.kts
 
           if [ "$REMOVE_FIREBASE" = "true" ]; then
-            echo "Removing Google Firebase dependencies, plugins, and UI hints..."
-            python3 - << 'EOF'
-          import os, re
-
-          if os.path.exists('android/app/google-services.json'):
-              os.remove('android/app/google-services.json')
-
-          path = 'android/settings.gradle.kts'
-          with open(path, 'r', encoding='utf-8') as f:
-              content = f.read()
-          content = re.sub(r'\s*id\(\"com\.google\.gms\.google-services\"\)[^\n]*', '', content)
-          content = re.sub(r'\s*id\(\"com\.google\.firebase\.crashlytics\"\)[^\n]*', '', content)
-          with open(path, 'w', encoding='utf-8') as f:
-              f.write(content)
-
-          path = 'android/gradle/libs.versions.toml'
-          with open(path, 'r', encoding='utf-8') as f:
-              content = f.read()
-          content = re.sub(r'firebaseBom = [^\n]+\n', '', content)
-          content = re.sub(r'firebase-[^\n]+\n', '', content)
-          with open(path, 'w', encoding='utf-8') as f:
-              f.write(content)
-
-          path = 'android/common/build.gradle.kts'
-          with open(path, 'r', encoding='utf-8') as f:
-              content = f.read()
-          content = re.sub(r'\s*implementation\([^\n]*libs\.firebase[^\n]*\)\n', '', content)
-          with open(path, 'w', encoding='utf-8') as f:
-              f.write(content)
-
-          path = 'android/app/build.gradle.kts'
-          with open(path, 'r', encoding='utf-8') as f:
-              content = f.read()
-          content = re.sub(r'import com\.google\.firebase\.[^\n]+\n', '', content)
-          content = re.sub(r'\s*id\(\"com\.google\.gms\.google-services\"\)\n', '', content)
-          content = re.sub(r'\s*id\(\"com\.google\.firebase\.crashlytics\"\)\n', '', content)
-          content = re.sub(r'\s*configure<CrashlyticsExtension>[\s\S]*?\n\s*\}', '', content)
-          content = re.sub(r'// The Crashlytics plugin[\s\S]*?finalizedBy\(\"uploadCrashlyticsSymbolFileRelease\"\)[\s\S]*?\n\}', '', content)
-          content = re.sub(r'\s*implementation\([^\n]*libs\.firebase[^\n]*\)\n', '', content)
-          with open(path, 'w', encoding='utf-8') as f:
-              f.write(content)
-
-          path = 'android/common/src/main/java/com/follow/clash/common/GlobalState.kt'
-          with open(path, 'r', encoding='utf-8') as f:
-              content = f.read()
-          content = re.sub(r'import com\.google\.firebase\.[^\n]+\n', '', content)
-          content = re.sub(r'fun setCrashlytics\(enable: Boolean\) \{[\s\S]*?\n    \}', 'fun setCrashlytics(enable: Boolean) {\n        // Firebase disabled\n    }', content)
-          content = re.sub(r'fun didCrashOnPreviousExecution\(\): Boolean \{[\s\S]*?\n    \}', 'fun didCrashOnPreviousExecution(): Boolean {\n        return false\n    }', content)
-          with open(path, 'w', encoding='utf-8') as f:
-              f.write(content)
-
-          path = 'lib/bootstrap.dart'
-          with open(path, 'r', encoding='utf-8') as f:
-              content = f.read()
-          content = content.replace('await _showCrashlyticsTip();\n', '// await _showCrashlyticsTip();\n')
-          with open(path, 'w', encoding='utf-8') as f:
-              f.write(content)
-
-          path = 'lib/views/config/general.dart'
-          with open(path, 'r', encoding='utf-8') as f:
-              content = f.read()
-          content = re.sub(r'\n\s*if\s*\(system\.isAndroid\)\s*_appSettingToggle\(\s*title:\s*\(l\)\s*=>\s*l\.crashlytics,[\s\S]*?\n\s*\),', '', content)
-          with open(path, 'w', encoding='utf-8') as f:
-              f.write(content)
-          EOF
+            echo "Applying preconfigured no-firebase templates..."
+            rm -f android/app/google-services.json
+            cp -r .github/custom/no-firebase/* .
           else
             if [ -f android/app/google-services.json ]; then
               sed -i "s/\"com.follow.clash\"/\"$PKG_NAME\"/g" android/app/google-services.json
@@ -213,9 +150,9 @@ jobs:
             fi
           fi
 
-          sed -i "s/android:label=\"FlClash\"/android:label=\"$APP_NAME\"/g" android/app/src/main/AndroidManifest.xml
-          sed -i "s/<string name=\"FlClash\">FlClash<\/string>/<string name=\"FlClash\">$APP_NAME<\/string>/g" android/common/src/main/res/values/strings.xml
-          sed -i "s/setSession(\"FlClash\")/setSession(\"$APP_NAME\")/g" android/service/src/main/java/com/follow/clash/service/VpnService.kt
+          sed -i "s/applicationId = \"com.follow.clash\"/applicationId = \"$PKG_NAME\"/g" android/app/build.gradle.kts
+          sed -i "s/<string name=\"app_name\">FlClash<\/string>/<string name=\"app_name\">$APP_NAME<\/string>/g" android/common/src/main/res/values/strings.xml
+          sed -i "s/<string name=\"service_channel_name\">FlClash Service<\/string>/<string name=\"service_channel_name\">$APP_NAME Service<\/string>/g" android/common/src/main/res/values/strings.xml
           sed -i "s/setContentTitle(\"FlClash\")/setContentTitle(\"$APP_NAME\")/g" android/service/src/main/java/com/follow/clash/service/modules/NotificationModule.kt
           sed -i "s/const appName = 'FlClash';/const appName = '$APP_NAME';/g" lib/common/constant.dart
           sed -i "s/app_name: 'FlClash'/app_name: '$APP_NAME'/g" distribute_options.yaml
