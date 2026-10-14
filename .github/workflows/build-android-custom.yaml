@@ -26,6 +26,11 @@ on:
         required: false
         default: false
         type: boolean
+      remove_firebase:
+        description: '是否完全移除 Google Firebase (Analytics 与 Crashlytics)'
+        required: false
+        default: true
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -58,11 +63,13 @@ jobs:
             echo "APP_NAME=${{ inputs.app_name }}" >> $GITHUB_ENV
             echo "BUILD_ARCH=${{ inputs.build_arch }}" >> $GITHUB_ENV
             echo "DO_RELEASE=${{ inputs.create_release }}" >> $GITHUB_ENV
+            echo "REMOVE_FIREBASE=${{ inputs.remove_firebase }}" >> $GITHUB_ENV
           else
             echo "PKG_NAME=com.custom.flclash" >> $GITHUB_ENV
             echo "APP_NAME=FlClash" >> $GITHUB_ENV
             echo "BUILD_ARCH=arm64-v8a" >> $GITHUB_ENV
             echo "DO_RELEASE=true" >> $GITHUB_ENV
+            echo "REMOVE_FIREBASE=true" >> $GITHUB_ENV
           fi
 
       - name: Setup Java 17
@@ -113,27 +120,89 @@ jobs:
             } >> android/local.properties
           fi
 
-      - name: Apply Package Name and App Name Patches
+      - name: Apply Customizations and Remove Firebase
         run: |
-          echo "Applying customizations: Package Name = $PKG_NAME, App Name = $APP_NAME"
-
-          # 1. 替换 android/app/build.gradle.kts 中的 applicationId
+          echo "Applying customizations: Package Name = $PKG_NAME, App Name = $APP_NAME, Remove Firebase = $REMOVE_FIREBASE"
           sed -i "s/applicationId = \"com.follow.clash\"/applicationId = \"$PKG_NAME\"/g" android/app/build.gradle.kts
 
-          # 2. 替换 android/app/google-services.json 中的 package_name
-          sed -i "s/\"com.follow.clash\"/\"$PKG_NAME\"/g" android/app/google-services.json
-          sed -i "s/\"com.follow.clash.debug\"/\"$PKG_NAME.debug\"/g" android/app/google-services.json
-          sed -i "s/\"com.follow.clash.dev\"/\"$PKG_NAME.dev\"/g" android/app/google-services.json
+          if [ "$REMOVE_FIREBASE" = "true" ]; then
+            echo "Removing Google Firebase dependencies, plugins, and UI hints..."
+            python3 - << 'EOF'
+          import os, re
 
-          # 3. 替换清单文件和资源中的应用显示名称
+          if os.path.exists('android/app/google-services.json'):
+              os.remove('android/app/google-services.json')
+
+          path = 'android/settings.gradle.kts'
+          with open(path, 'r', encoding='utf-8') as f:
+              content = f.read()
+          content = re.sub(r'\s*id\(\"com\.google\.gms\.google-services\"\)[^\n]*', '', content)
+          content = re.sub(r'\s*id\(\"com\.google\.firebase\.crashlytics\"\)[^\n]*', '', content)
+          with open(path, 'w', encoding='utf-8') as f:
+              f.write(content)
+
+          path = 'android/gradle/libs.versions.toml'
+          with open(path, 'r', encoding='utf-8') as f:
+              content = f.read()
+          content = re.sub(r'firebaseBom = [^\n]+\n', '', content)
+          content = re.sub(r'firebase-[^\n]+\n', '', content)
+          with open(path, 'w', encoding='utf-8') as f:
+              f.write(content)
+
+          path = 'android/common/build.gradle.kts'
+          with open(path, 'r', encoding='utf-8') as f:
+              content = f.read()
+          content = re.sub(r'\s*implementation\([^\n]*libs\.firebase[^\n]*\)\n', '', content)
+          with open(path, 'w', encoding='utf-8') as f:
+              f.write(content)
+
+          path = 'android/app/build.gradle.kts'
+          with open(path, 'r', encoding='utf-8') as f:
+              content = f.read()
+          content = re.sub(r'import com\.google\.firebase\.[^\n]+\n', '', content)
+          content = re.sub(r'\s*id\(\"com\.google\.gms\.google-services\"\)\n', '', content)
+          content = re.sub(r'\s*id\(\"com\.google\.firebase\.crashlytics\"\)\n', '', content)
+          content = re.sub(r'\s*configure<CrashlyticsExtension>[\s\S]*?\n\s*\}', '', content)
+          content = re.sub(r'// The Crashlytics plugin[\s\S]*?finalizedBy\(\"uploadCrashlyticsSymbolFileRelease\"\)[\s\S]*?\n\}', '', content)
+          content = re.sub(r'\s*implementation\([^\n]*libs\.firebase[^\n]*\)\n', '', content)
+          with open(path, 'w', encoding='utf-8') as f:
+              f.write(content)
+
+          path = 'android/common/src/main/java/com/follow/clash/common/GlobalState.kt'
+          with open(path, 'r', encoding='utf-8') as f:
+              content = f.read()
+          content = re.sub(r'import com\.google\.firebase\.[^\n]+\n', '', content)
+          content = re.sub(r'fun setCrashlytics\(enable: Boolean\) \{[\s\S]*?\n    \}', 'fun setCrashlytics(enable: Boolean) {\n        // Firebase disabled\n    }', content)
+          content = re.sub(r'fun didCrashOnPreviousExecution\(\): Boolean \{[\s\S]*?\n    \}', 'fun didCrashOnPreviousExecution(): Boolean {\n        return false\n    }', content)
+          with open(path, 'w', encoding='utf-8') as f:
+              f.write(content)
+
+          path = 'lib/bootstrap.dart'
+          with open(path, 'r', encoding='utf-8') as f:
+              content = f.read()
+          content = content.replace('await _showCrashlyticsTip();\n', '// await _showCrashlyticsTip();\n')
+          with open(path, 'w', encoding='utf-8') as f:
+              f.write(content)
+
+          path = 'lib/views/config/general.dart'
+          with open(path, 'r', encoding='utf-8') as f:
+              content = f.read()
+          content = re.sub(r'\n\s*if\s*\(system\.isAndroid\)\s*_appSettingToggle\(\s*title:\s*\(l\)\s*=>\s*l\.crashlytics,[\s\S]*?\n\s*\),', '', content)
+          with open(path, 'w', encoding='utf-8') as f:
+              f.write(content)
+          EOF
+          else
+            if [ -f android/app/google-services.json ]; then
+              sed -i "s/\"com.follow.clash\"/\"$PKG_NAME\"/g" android/app/google-services.json
+              sed -i "s/\"com.follow.clash.debug\"/\"$PKG_NAME.debug\"/g" android/app/google-services.json
+              sed -i "s/\"com.follow.clash.dev\"/\"$PKG_NAME.dev\"/g" android/app/google-services.json
+            fi
+          fi
+
           sed -i "s/android:label=\"FlClash\"/android:label=\"$APP_NAME\"/g" android/app/src/main/AndroidManifest.xml
           sed -i "s/<string name=\"FlClash\">FlClash<\/string>/<string name=\"FlClash\">$APP_NAME<\/string>/g" android/common/src/main/res/values/strings.xml
-
-          # 4. 替换系统通知与 VPN 会话中的显示标题
           sed -i "s/setSession(\"FlClash\")/setSession(\"$APP_NAME\")/g" android/service/src/main/java/com/follow/clash/service/VpnService.kt
           sed -i "s/setContentTitle(\"FlClash\")/setContentTitle(\"$APP_NAME\")/g" android/service/src/main/java/com/follow/clash/service/modules/NotificationModule.kt
-
-          # 5. 替换 Dart UI 与分发配置中的应用名称
           sed -i "s/const appName = 'FlClash';/const appName = '$APP_NAME';/g" lib/common/constant.dart
           sed -i "s/app_name: 'FlClash'/app_name: '$APP_NAME'/g" distribute_options.yaml
 
@@ -202,6 +271,7 @@ jobs:
             - **应用名称**: ${{ env.APP_NAME }}
             - **应用包名**: ${{ env.PKG_NAME }}
             - **构建架构**: ${{ env.BUILD_ARCH }}
+            - **移除 Firebase**: ${{ env.REMOVE_FIREBASE }}
             - **构建时间**: ${{ github.event.head_commit.timestamp || github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
