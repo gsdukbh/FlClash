@@ -6,7 +6,7 @@ on:
       package_name:
         description: '应用包名 (Package Name / ApplicationId，例如 com.mysecurity.netguard)'
         required: true
-        default: 'com.x.fly'
+        default: 'com.example.myapplication'
         type: string
       app_name:
         description: '应用显示名称 (App Display Name，例如 网络助手)'
