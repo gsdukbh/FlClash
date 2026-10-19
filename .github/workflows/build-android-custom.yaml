@@ -156,6 +156,7 @@ jobs:
           sed -i "s/setContentTitle(\"FlClash\")/setContentTitle(\"$APP_NAME\")/g" android/service/src/main/java/com/follow/clash/service/modules/NotificationModule.kt
           sed -i "s/const appName = 'FlClash';/const appName = '$APP_NAME';/g" lib/common/constant.dart
           sed -i "s/app_name: 'FlClash'/app_name: '$APP_NAME'/g" distribute_options.yaml
+          sed -i 's/onPressed: () => _handleAgree(context),/onPressed: () => Navigator.of(context).pop(true),/g' lib/views/disclaimer.dart
 
       - name: Setup Go
         uses: actions/setup-go@v5
