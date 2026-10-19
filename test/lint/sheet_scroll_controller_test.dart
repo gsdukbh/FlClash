@@ -8,9 +8,13 @@ final _plainController = RegExp(r'\bScrollController\(');
 final _primaryOptOut = RegExp(r'\bprimary:\s*false\b');
 
 const _allowed = {
-  'lib/widgets/inherited.dart',
+  'lib/ui/inherited.dart',
   // A drag on the editor's completion overlay must never move a sheet.
   'lib/features/editor/completion_popup.dart',
+  // Nor a drag on a popup menu, which stands over the sheet it opened from.
+  'lib/ui/popup.dart',
+  // Nor a drag along the proxies group chips, which run across the sheet.
+  'lib/views/proxies/group_tabs.dart',
 };
 
 int _lineOf(String source, int offset) =>

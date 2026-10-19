@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/core/event.dart';
 import 'package:fl_clash/core/method.dart';
+import 'package:fl_clash/core/spill.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
@@ -34,7 +35,8 @@ abstract interface class CoreRpcChannel {
 final class CoreRpcClient implements CoreRpcChannel {
   final DesktopCoreTransport transport;
   final Duration extensionGrace;
-  final Map<String, Completer<Object?>> _pending = {};
+  final Map<String, ({Completer<Object?> completer, CoreMethod method})>
+  _pending = {};
   late final StreamSubscription<Uint8List> _frameSubscription;
   late final StreamSubscription<DesktopTransportEvent> _eventSubscription;
 
@@ -75,7 +77,7 @@ final class CoreRpcClient implements CoreRpcChannel {
     }
     final id = '${++_methodCallId}';
     final completer = Completer<Object?>();
-    _pending[id] = completer;
+    _pending[id] = (completer: completer, method: method);
     final requestTimeout = timeout ?? const Duration(minutes: 3);
     final stopwatch = Stopwatch()..start();
     try {
@@ -163,7 +165,7 @@ final class CoreRpcClient implements CoreRpcChannel {
 
   void _removePending(String id, Completer<Object?> completer) {
     final removed = _pending.remove(id);
-    if (identical(removed, completer) && !completer.isCompleted) {
+    if (identical(removed?.completer, completer) && !completer.isCompleted) {
       completer.complete(null);
     }
   }
@@ -208,8 +210,26 @@ final class CoreRpcClient implements CoreRpcChannel {
       ..reset()
       ..start();
     final id = response.id;
-    final completer = id == null ? null : _pending.remove(id);
-    if (completer == null || completer.isCompleted) {
+    final pending = id == null ? null : _pending.remove(id);
+    final completer = pending?.completer;
+    if (pending == null || completer == null || completer.isCompleted) {
+      unawaited(discardSpilledResponse(response));
+      return;
+    }
+    if (response.file != null) {
+      unawaited(
+        resolveSpilledResponse(
+          response,
+          method: pending.method,
+        ).then((resolved) => _complete(completer, resolved)),
+      );
+      return;
+    }
+    _complete(completer, response);
+  }
+
+  void _complete(Completer<Object?> completer, CoreMethodResponse response) {
+    if (completer.isCompleted) {
       return;
     }
     final error = response.error;
@@ -256,7 +276,9 @@ final class CoreRpcClient implements CoreRpcChannel {
   }
 
   void _failPending(CoreMethodException error) {
-    final completers = _pending.values.toList(growable: false);
+    final completers = [
+      for (final pending in _pending.values) pending.completer,
+    ];
     _pending.clear();
     for (final completer in completers) {
       if (!completer.isCompleted) {

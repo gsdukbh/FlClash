@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/enum/enum.dart';
-import 'package:fl_clash/icons/icons.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/providers/app.dart';
 import 'package:fl_clash/providers/config.dart';
 import 'package:fl_clash/providers/database.dart';
 import 'package:fl_clash/state.dart';
+import 'package:fl_clash/ui/icons/icons.dart';
 import 'package:fl_clash/views/resources.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' hide context;
 
+import '../helpers/app_paths.dart';
 import '../helpers/context_menu.dart';
 import '../helpers/glyph_finders.dart';
 import '../helpers/test_app.dart';
@@ -25,22 +26,13 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory home;
-  final supportDirectory = AppPath.supportDirectory;
-  final temporaryDirectory = AppPath.temporaryDirectory;
-  final cacheDirectory = AppPath.cacheDirectory;
 
   setUpAll(() async {
     home = Directory.systemTemp.createTempSync('flclash-resources-');
-    AppPath.supportDirectory = () async => home;
-    AppPath.temporaryDirectory = () async => home;
-    AppPath.cacheDirectory = () async => home;
-    await appPath.homeDirPath;
+    await useAppPaths(home);
   });
 
   tearDownAll(() {
-    AppPath.supportDirectory = supportDirectory;
-    AppPath.temporaryDirectory = temporaryDirectory;
-    AppPath.cacheDirectory = cacheDirectory;
     if (home.existsSync()) home.deleteSync(recursive: true);
   });
 
@@ -439,9 +431,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('shows the loading illustration until every row is ready', (
-    tester,
-  ) async {
+  testWidgets('shows every row in one step once all are ready', (tester) async {
     const size = Size(1000, 1400);
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -477,21 +467,13 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pump();
-    await settle(tester);
-
-    final l10n = currentAppLocalizations;
-    final illustration = find.byKey(
-      const ValueKey(NullStatusIllustration.data),
-    );
-    expect(illustration, findsOneWidget);
     expect(find.text(GeoResource.MMDB.name), findsNothing);
 
-    await tester.pumpAndSettle();
+    final l10n = currentAppLocalizations;
     await pumpUntilFound(tester, find.text(GeoResource.MMDB.name));
     expect(find.text('Remote script'), findsOneWidget);
     expect(find.text(l10n.unknown), findsNWidgets(GeoResource.values.length));
     await tester.pumpAndSettle();
-    expect(illustration, findsNothing);
     expect(tester.takeException(), null);
 
     await tester.pumpWidget(const SizedBox.shrink());

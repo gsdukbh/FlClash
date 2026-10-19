@@ -38,6 +38,12 @@ mixin CoreInterface {
 
   Future<Map<String, dynamic>> getConfig(String path);
 
+  Future<ProfileBase> getProfileBase(String path);
+
+  Future<Map<String, dynamic>> getProfileOutbounds(String path);
+
+  Future<String> buildProfile(SetupBase base);
+
   Future<String> dumpRuleSet(String path);
 
   Future<RuleSetInfo> compileRuleSet(String name, {String url = ''});
@@ -296,6 +302,51 @@ abstract class CoreHandlerInterface with CoreInterface {
   }
 
   @override
+  Future<ProfileBase> getProfileBase(String path) async {
+    final result = await _invokeMethod<Map<String, dynamic>>(
+      method: CoreMethod.getProfileBase,
+      arguments: path,
+    );
+    if (result == null) {
+      throw const CoreMethodException(
+        code: 'empty_result',
+        message: 'Core returned an empty profile base',
+      );
+    }
+    return ProfileBase.fromJson(result);
+  }
+
+  @override
+  Future<Map<String, dynamic>> getProfileOutbounds(String path) async {
+    final result = await _invokeMethod<Map<String, dynamic>>(
+      method: CoreMethod.getProfileOutbounds,
+      arguments: path,
+    );
+    if (result == null) {
+      throw const CoreMethodException(
+        code: 'empty_result',
+        message: 'Core returned no outbounds',
+      );
+    }
+    return result;
+  }
+
+  @override
+  Future<String> buildProfile(SetupBase base) async {
+    final result = await _invokeMethod<String>(
+      method: CoreMethod.buildProfile,
+      arguments: base.toJson(),
+    );
+    if (result == null || result.isEmpty) {
+      throw const CoreMethodException(
+        code: 'empty_result',
+        message: 'Core returned no built profile',
+      );
+    }
+    return result;
+  }
+
+  @override
   Future<String> setupConfig(SetupParams setupParams) async {
     return _invokeMessage(
       method: CoreMethod.setupConfig,
@@ -419,17 +470,8 @@ abstract class CoreHandlerInterface with CoreInterface {
 
   @override
   Future<List<TrackerInfo>> getConnections() async {
-    final data = await _invokeMethod<Map<String, dynamic>>(
-      method: CoreMethod.getConnections,
-    );
-    final connections = data?['connections'];
-    if (connections is! List) {
-      return [];
-    }
-    return connections
-        .whereType<Map>()
-        .map((item) => TrackerInfo.fromJson(Map<String, Object?>.from(item)))
-        .toList();
+    final data = await _invokeMethod<Object>(method: CoreMethod.getConnections);
+    return data is List<TrackerInfo> ? data : trackerInfosOf(data);
   }
 
   @override

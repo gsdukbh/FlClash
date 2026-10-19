@@ -1,5 +1,6 @@
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/enum/enum.dart';
+import 'package:fl_clash/ui/color.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
@@ -109,32 +110,78 @@ final List<HotKeyAction> defaultHotKeyActions = system.isWindows
       ];
 
 const List<DashboardWidget> defaultDashboardWidgets = [
+  DashboardWidget.currentOutbound,
   DashboardWidget.networkSpeed,
-  DashboardWidget.systemProxyButton,
-  DashboardWidget.tunButton,
   DashboardWidget.outboundMode,
-  DashboardWidget.networkDetection,
-  DashboardWidget.trafficUsage,
+  DashboardWidget.vpnButton,
+  DashboardWidget.networkTakeover,
   DashboardWidget.intranetIp,
+  DashboardWidget.serviceStatus,
+  DashboardWidget.profiles,
+  DashboardWidget.proxyGroups,
+  DashboardWidget.connectionStats,
 ];
 
-const _legacyOutboundModeV2 = 'outboundModeV2';
+const _legacyDefaultDashboardWidgets = {
+  'networkSpeed',
+  'systemProxyButton',
+  'tunButton',
+  'outboundMode',
+  'networkDetection',
+  'trafficUsage',
+  'intranetIp',
+};
 
-const _retiredDashboardWidgets = {'overrideDnsButton', 'overrideNtpButton'};
+/// The run time has no replacement: it moved onto the current outbound card,
+/// as did the outbound IP, whose card became the intranet one.
+const _legacyDashboardWidgets = {
+  'networkDetection': DashboardWidget.intranetIp,
+  'outboundModeV2': DashboardWidget.outboundMode,
+  'systemProxyButton': DashboardWidget.networkTakeover,
+  'tunButton': DashboardWidget.networkTakeover,
+  'connections': DashboardWidget.connectionStats,
+  'requests': DashboardWidget.connectionStats,
+  'dnsQueries': DashboardWidget.connectionStats,
+  'trafficUsage': DashboardWidget.networkSpeed,
+};
 
+const _retiredDashboardWidgets = {
+  'runTime',
+  'overrideDnsButton',
+  'overrideNtpButton',
+};
+
+/// The current outbound card cannot be removed: a list without it predates it.
 List<DashboardWidget> dashboardWidgetsFromJson(
   List<dynamic>? dashboardWidgets,
 ) {
-  return dashboardWidgets
-          ?.where((e) => !_retiredDashboardWidgets.contains(e))
-          .map(
-            (e) => e == _legacyOutboundModeV2
-                ? DashboardWidget.outboundMode
-                : $enumDecode(_$DashboardWidgetEnumMap, e),
-          )
-          .toSet()
-          .toList() ??
-      defaultDashboardWidgets;
+  if (dashboardWidgets == null) {
+    return defaultDashboardWidgets;
+  }
+  final byName = DashboardWidget.values.asNameMap();
+  if (dashboardWidgets.contains(DashboardWidget.currentOutbound.name)) {
+    return dashboardWidgets
+        .map((e) => _legacyDashboardWidgets[e] ?? byName[e])
+        .nonNulls
+        .toSet()
+        .toList();
+  }
+  final names = {
+    for (final name in dashboardWidgets)
+      name == 'outboundModeV2' ? DashboardWidget.outboundMode.name : name,
+  };
+  if (names.length == _legacyDefaultDashboardWidgets.length &&
+      names.containsAll(_legacyDefaultDashboardWidgets)) {
+    return defaultDashboardWidgets;
+  }
+  final kept = dashboardWidgets
+      .map((e) => _legacyDashboardWidgets[e] ?? byName[e])
+      .nonNulls;
+  if (kept.isEmpty &&
+      !dashboardWidgets.every(_retiredDashboardWidgets.contains)) {
+    return defaultDashboardWidgets;
+  }
+  return {DashboardWidget.currentOutbound, ...kept}.toList();
 }
 
 Object? _readSidebarExpanded(Map<dynamic, dynamic> json, String key) {
@@ -195,8 +242,6 @@ abstract class AppSettingProps with _$AppSettingProps {
     @JsonKey(readValue: _readSidebarExpanded)
     bool sidebarExpanded,
     @Default(0) int acceptedDisclaimerVersion,
-    @Default(false) bool crashlyticsTip,
-    @Default(false) bool crashlytics,
     @Default(true) bool minimizeOnExit,
     @Default(false) bool hidden,
     @Default(false) bool developerMode,
@@ -212,7 +257,7 @@ abstract class AppSettingProps with _$AppSettingProps {
     @Default(EditorFontSize.standard) EditorFontSize editorFontSize,
     @Default([]) List<String> serviceOrder,
     @Default([]) List<String> disabledServices,
-    String? currentService,
+    @Default({}) Map<String, Map<String, double>> tableColumnWidths,
   }) = _AppSettingProps;
 
   factory AppSettingProps.fromJson(Map<String, Object?> json) =>
@@ -270,10 +315,17 @@ abstract class WindowProps with _$WindowProps {
       json == null ? const WindowProps() : _$WindowPropsFromJson(json);
 }
 
-extension WindowPropsExt on WindowProps {
-  Size get _size => Size(width, height);
+/// Four dashboard columns at full density beside the expanded sidebar, with
+/// room for the Windows and Linux title bar.
+const defaultWindowSize = Size(1280, 880);
 
-  Size get size => _size.isEmpty ? const Size(680, 580) : _size;
+extension WindowPropsExt on WindowProps {
+  Size? get savedSize {
+    final size = Size(width, height);
+    return size.isEmpty ? null : size;
+  }
+
+  Size get size => savedSize ?? defaultWindowSize;
 }
 
 @freezed
@@ -337,16 +389,27 @@ ProxiesIconStyle proxiesIconStyleSafeFromJson(Object? iconStyle) {
   };
 }
 
+ProxyCardType proxyCardTypeSafeFromJson(Object? cardType) {
+  return switch (cardType) {
+    'loose' || 'expand' => ProxyCardType.loose,
+    'standard' || 'shrink' => ProxyCardType.standard,
+    'compact' || 'min' => ProxyCardType.compact,
+    _ => ProxyCardType.standard,
+  };
+}
+
 @freezed
 abstract class ProxiesStyleProps with _$ProxiesStyleProps {
   const factory ProxiesStyleProps({
-    @Default(ProxiesType.tab) ProxiesType type,
+    @Default(ProxiesType.list) ProxiesType type,
     @Default(ProxiesSortType.none) ProxiesSortType sortType,
     @Default(ProxiesLayout.standard) ProxiesLayout layout,
     @Default(ProxiesIconStyle.filled)
     @JsonKey(fromJson: proxiesIconStyleSafeFromJson)
     ProxiesIconStyle iconStyle,
-    @Default(ProxyCardType.shrink) ProxyCardType cardType,
+    @Default(ProxyCardType.standard)
+    @JsonKey(fromJson: proxyCardTypeSafeFromJson)
+    ProxyCardType cardType,
     @Default(false) bool hideTimeoutProxies,
   }) = _ProxiesStyleProps;
 
@@ -366,15 +429,41 @@ abstract class TextScale with _$TextScale {
       _$TextScaleFromJson(json);
 }
 
+// Older configs name one of Material's nine scheme variants instead.
+Object? _readColorStyle(Map<dynamic, dynamic> json, String key) {
+  if (json.containsKey(key)) {
+    return json[key];
+  }
+  return switch (json['schemeVariant']) {
+    'monochrome' => ColorStyle.monochrome.name,
+    'tonalSpot' || 'neutral' => ColorStyle.soft.name,
+    _ => null,
+  };
+}
+
+// Older configs say whether glass is on.
+Object? _readLiquidGlass(Map<dynamic, dynamic> json, String key) {
+  return switch (json[key]) {
+    true => LiquidGlassMode.standard.name,
+    false => LiquidGlassMode.none.name,
+    final value => value,
+  };
+}
+
 @freezed
 abstract class ThemeProps with _$ThemeProps {
   const factory ThemeProps({
     int? primaryColor,
     @Default(defaultPrimaryColors) List<int> primaryColors,
-    @Default(ThemeMode.dark) ThemeMode themeMode,
-    @Default(DynamicSchemeVariant.content) DynamicSchemeVariant schemeVariant,
+    @Default(ThemeMode.system) ThemeMode themeMode,
+    @Default(ColorStyle.vivid)
+    @JsonKey(readValue: _readColorStyle)
+    ColorStyle colorStyle,
     @Default(false) bool pureBlack,
     @Default(true) bool sidebarBlur,
+    @Default(LiquidGlassMode.none)
+    @JsonKey(readValue: _readLiquidGlass)
+    LiquidGlassMode liquidGlass,
     @Default(TextScale()) TextScale textScale,
     // `fontFamily` held the names of a removed enum, which old configs may
     // still carry.
@@ -405,7 +494,10 @@ abstract class Config with _$Config {
     @Default(defaultVpnProps) VpnProps vpnProps,
     @JsonKey(fromJson: ThemeProps.safeFromJson) required ThemeProps themeProps,
     @Default(defaultProxiesStyleProps) ProxiesStyleProps proxiesStyleProps,
-    @Default(defaultWindowProps) WindowProps windowProps,
+    // A new key opens every window once at defaultWindowSize.
+    @Default(defaultWindowProps)
+    @JsonKey(name: 'windowGeometry')
+    WindowProps windowProps,
     @Default(defaultClashConfig) PatchClashConfig patchClashConfig,
     @Default([]) List<String> excludeSSIDs,
   }) = _Config;

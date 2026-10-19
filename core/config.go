@@ -63,6 +63,7 @@ func handleSetupConfig(params *SetupParams) error {
 }
 
 func handleGetConfig(path string) (*config.RawConfig, error) {
+	defer scheduleLoadMemoryRelease()
 	buf, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -100,11 +101,23 @@ func loadConfig(path string) (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	return withPlatformLimits(cfg), nil
+}
+
+func withPlatformLimits(cfg *config.Config) *config.Config {
 	if cfg.NTP.WriteToSystem && !systemTimeWritable {
 		log.Warnln("ntp write-to-system ignored: Android does not let apps set the system time")
 		cfg.NTP.WriteToSystem = false
 	}
-	return cfg, nil
+	return cfg
+}
+
+func loadSetupConfig(params *SetupParams) (*config.Config, error) {
+	path := filepath.Join(constant.Path.HomeDir(), "config.yaml")
+	if params.Base != nil {
+		return loadConfigWithBase(params.Base, path)
+	}
+	return loadConfig(path)
 }
 
 func applyConfig(params *SetupParams) error {
@@ -114,7 +127,7 @@ func applyConfig(params *SetupParams) error {
 
 	setTestURL(params.TestURL)
 	skipCertVerify.Store(params.SkipCertVerify)
-	cfg, err := loadConfig(filepath.Join(constant.Path.HomeDir(), "config.yaml"))
+	cfg, err := loadSetupConfig(params)
 	if err != nil {
 		// The fallback is what keeps the listeners serving while the host
 		// reports the error, but it applies a config with no proxies in it.
@@ -214,26 +227,8 @@ func patchTun(target *LC.Tun, params *tunSchema) {
 	if params.Device != nil {
 		target.Device = *params.Device
 	}
-	if params.RouteAddress != nil {
-		target.RouteAddress = *params.RouteAddress
-	}
-	if params.DNSHijack != nil {
-		target.DNSHijack = *params.DNSHijack
-	}
 	if params.Stack != nil {
 		target.Stack = *params.Stack
-	}
-	if params.MTU != nil {
-		target.MTU = *params.MTU
-	}
-	if params.CongestionController != nil {
-		target.CongestionController = *params.CongestionController
-	}
-	if params.StrictRoute != nil {
-		target.StrictRoute = *params.StrictRoute
-	}
-	if params.RouteExcludeAddress != nil {
-		target.RouteExcludeAddress = *params.RouteExcludeAddress
 	}
 }
 

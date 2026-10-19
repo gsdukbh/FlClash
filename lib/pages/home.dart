@@ -1,16 +1,13 @@
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/enum/enum.dart';
-import 'package:fl_clash/icons/icons.dart';
 import 'package:fl_clash/manager/app_manager.dart';
 import 'package:fl_clash/models/common.dart';
 import 'package:fl_clash/providers/providers.dart';
-import 'package:fl_clash/views/dashboard/widgets/start_button.dart';
+import 'package:fl_clash/ui/icons/icons.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-typedef OnSelected = void Function(int index);
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -32,11 +29,6 @@ class HomePage extends ConsumerWidget {
                   .watch(currentNavigationItemsStateProvider)
                   .value;
               final isMobile = ref.watch(isMobileViewProvider);
-              final floating = ref.watch(
-                appSettingProvider.select(
-                  (state) => state.floatingNavigationBar,
-                ),
-              );
               return _HomePageView(
                 navigationItems: navigationItems,
                 pageBuilder: (_, index) {
@@ -45,7 +37,6 @@ class HomePage extends ConsumerWidget {
                     key: ValueKey(navigationItem.label),
                     item: navigationItem,
                     isMobile: isMobile,
-                    docked: isMobile && floating,
                     view: navigationItem.builder(context),
                   );
                 },
@@ -75,14 +66,8 @@ class _HomeShell extends ConsumerWidget {
     final floating = ref.watch(
       appSettingProvider.select((state) => state.floatingNavigationBar),
     );
-    final hasProfile = ref.watch(
-      profilesProvider.select((profiles) => profiles.isNotEmpty),
-    );
-    final isDashboard = ref.watch(
-      shownPageLabelProvider.select((label) => label == PageLabel.dashboard),
-    );
     return Material(
-      color: context.colorScheme.surface,
+      color: SurfaceLevel.page.colorOf(context.colorScheme),
       child: Column(
         children: [
           Expanded(
@@ -118,9 +103,6 @@ class _HomeShell extends ConsumerWidget {
                         onSelected: (index) {
                           _handleToPage(navigationItems[index].label, ref);
                         },
-                        trailing: hasProfile && isDashboard
-                            ? const StartButton()
-                            : null,
                       ),
                     ),
                   ),
@@ -197,23 +179,18 @@ class _NavigationPage extends StatelessWidget {
     super.key,
     required this.item,
     required this.isMobile,
-    required this.docked,
     required this.view,
   });
 
   final NavigationItem item;
   final bool isMobile;
-  final bool docked;
   final Widget view;
 
   @override
   Widget build(BuildContext context) {
-    final scopedView = PageFocusScope(
-      child: DockedPageScope(docked: docked, child: view),
-    );
+    final scopedView = PageFocusScope(child: view);
     final keptView = KeepScope(
       key: ValueKey(item.label),
-      keep: item.keep,
       child: isMobile
           ? scopedView
           : Navigator(
@@ -425,7 +402,8 @@ class _FadeTabPage extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (_, child) {
-        final delta = enabled ? _delta : 0.0;
+        final offset = _delta;
+        final delta = enabled ? offset : 0.0;
         return FractionalTranslation(
           translation: Offset(-delta, 0),
           child: Opacity(opacity: 1 - delta.abs(), child: child),

@@ -17,28 +17,12 @@ Future<T> _decodeJSON<T>(String content) async {
   return json.decode(content);
 }
 
-Future<String> encodeJSONTask<T>(T data) async {
-  return compute<T, String>(_encodeJSON, data);
-}
-
-Future<String> _encodeJSON<T>(T content) async {
-  return json.encode(content);
-}
-
 Future<String> encodeYamlTask<T>(T data) async {
   return compute<T, String>(_encodeYaml, data);
 }
 
 Future<String> _encodeYaml<T>(T content) async {
   return yaml.encode(content);
-}
-
-Future<String> encodeMD5Task(String data) async {
-  return compute<String, String>(_encodeMD5, data);
-}
-
-Future<String> _encodeMD5<T>(String content) async {
-  return content.toMd5();
 }
 
 /// Throws [FormatException] when the file is not UTF-8.
@@ -90,34 +74,45 @@ Future<List<Group>> buildGroups(ComputeGroupsState state) async {
 }
 
 Future<ClashConfig> clashConfigTask(Map<String, dynamic> data) async {
-  return compute<Map<String, dynamic>, ClashConfig>(buildClashConfig, data);
+  return compute<Map<String, dynamic>, ClashConfig>(_buildClashConfig, data);
 }
 
-@visibleForTesting
-ClashConfig buildClashConfig(Map<String, dynamic> configMap) {
-  final clashConfig = ClashConfig.fromJson(configMap);
-  final proxyTypeMap = <String, String>{};
-  for (final proxy in clashConfig.proxies) {
-    proxyTypeMap[proxy.name] = proxy.type;
-  }
-  for (final proxyGroup in clashConfig.proxyGroups) {
-    proxyTypeMap[proxyGroup.name] = proxyGroup.type.value;
-  }
-  return clashConfig.copyWith(proxyTypeMap: proxyTypeMap);
+ClashConfig _buildClashConfig(Map<String, dynamic> configMap) {
+  return ClashConfig.fromJson(configMap);
 }
 
-Future<({String yaml, String md5})> makeRealProfileTask(
-  MakeRealProfileState data,
-) async {
-  return compute<MakeRealProfileState, ({String yaml, String md5})>(
-    _makeRealProfileTask,
-    data,
+typedef ConfigCounts = ({int groups, int proxies, int rules});
+
+typedef RealProfile = ({String yaml, String md5, ConfigCounts counts});
+
+/// Counts what the Core was handed, not what the profile file declares.
+ConfigCounts configCountsOf(Map<Object?, Object?> config) {
+  int lengthOf(Object? value) => value is List ? value.length : 0;
+  return (
+    groups: lengthOf(config['proxy-groups']),
+    proxies: lengthOf(config['proxies']),
+    rules: lengthOf(config['rules']),
   );
 }
 
-Future<({String yaml, String md5})> _makeRealProfileTask(
-  MakeRealProfileState data,
-) async {
+String? lastMatchTarget(List<String> rules) {
+  for (int i = rules.length - 1; i >= 0; i--) {
+    final parsed = Rule.parse(rules[i]);
+    if (parsed.ruleAction == RuleAction.MATCH) {
+      final target = parsed.ruleTarget;
+      if (target != null && target.isNotEmpty) {
+        return target;
+      }
+    }
+  }
+  return null;
+}
+
+Future<RealProfile> makeRealProfileTask(MakeRealProfileState data) async {
+  return compute<MakeRealProfileState, RealProfile>(_makeRealProfileTask, data);
+}
+
+Future<RealProfile> _makeRealProfileTask(MakeRealProfileState data) async {
   final rawConfig = Map.from(data.rawConfig);
   final realPatchConfig = data.realPatchConfig;
   final profilesPath = data.profilesPath;
@@ -212,11 +207,25 @@ Future<({String yaml, String md5})> _makeRealProfileTask(
   rawConfig['authentication'] = data.authentication;
   rawConfig['skip-auth-prefixes'] = [];
   rawConfig['mode'] = realPatchConfig.mode.name;
-  rawConfig['tun'] = {
+  // auto-route is always on, so without auto-detect-interface the core sends
+  // its own outbound back into the TUN unless interface-name binds it, and
+  // interface-name wins over the detected interface anyway. A profile's own
+  // dns-hijack may leave queries to other resolvers unhijacked, so only a
+  // picked key replaces any:53.
+  final tun = {
     if (rawConfig['tun'] is Map) ...rawConfig['tun'] as Map,
+    'dns-hijack': defaultDnsHijack,
     ...overrides.tun.overrideJson(overrides.tunOverrideKeys),
-    ...realPatchConfig.tun.toJson(),
+    ...realPatchConfig.tun.coreJson,
+    'auto-detect-interface': true,
   };
+  if (data.bypassPrivateRoute) {
+    tun['route-exclude-address'] = [
+      if (tun['route-exclude-address'] case final List routes) ...routes,
+      ...privateRouteAddress,
+    ];
+  }
+  rawConfig['tun'] = tun;
   rawConfig['geodata-loader'] = realPatchConfig.geodataLoader.name;
   rawConfig['geo-auto-update'] = realPatchConfig.geoAutoUpdate;
   rawConfig['geo-update-interval'] = realPatchConfig.geoUpdateInterval;
@@ -334,16 +343,7 @@ Future<({String yaml, String md5})> _makeRealProfileTask(
       }
 
       if (hasMatchPlaceholder && replacementTarget == null) {
-        for (int i = rules.length - 1; i >= 0; i--) {
-          final parsed = Rule.parse(rules[i]);
-          if (parsed.ruleAction == RuleAction.MATCH) {
-            final target = parsed.ruleTarget;
-            if (target != null && target.isNotEmpty) {
-              replacementTarget = target;
-              break;
-            }
-          }
-        }
+        replacementTarget = lastMatchTarget(rules);
       }
       final List<String> finalAddedRules;
 
@@ -374,7 +374,7 @@ Future<({String yaml, String md5})> _makeRealProfileTask(
   }
   rawConfig['rules'] = rules;
   final yaml = await _encodeYaml(Map<String, dynamic>.from(rawConfig));
-  return (yaml: yaml, md5: yaml.toMd5());
+  return (yaml: yaml, md5: yaml.toMd5(), counts: configCountsOf(rawConfig));
 }
 
 typedef ShakingStoreArgs = ({
@@ -620,17 +620,4 @@ Future<MigrationData> migrateLegacyConfig({
     scripts: scripts,
     disabledRules: disabledRules,
   );
-}
-
-Future<List<T>> mapListTask<T, S>(List<S> results, T Function(S) mapper) async {
-  return compute<({List<S> results, T Function(S) mapper}), List<T>>(
-    _mapListTask,
-    (results: results, mapper: mapper),
-  );
-}
-
-Future<List<T>> _mapListTask<T, S>(
-  ({List<S> results, T Function(S) mapper}) args,
-) async {
-  return args.results.map((item) => args.mapper(item)).toList();
 }

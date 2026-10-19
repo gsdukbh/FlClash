@@ -11,7 +11,6 @@ void main() {
       expect(appLocalizations.dashboard, isNotEmpty);
       expect(appLocalizations.proxies, isNotEmpty);
       expect(appLocalizations.settings, isNotEmpty);
-      expect(appLocalizations.hoursCount(2), contains('2'));
       expect(appLocalizations.secondsCount(30), contains('30'));
       expect(appLocalizations.geoUpdated('geoip'), contains('geoip'));
     }
@@ -19,7 +18,7 @@ void main() {
 
   test('delegate recognizes only supported locales', () {
     expect(AppLocalizations.delegate.isSupported(const Locale('en')), isTrue);
-    expect(AppLocalizations.delegate.isSupported(const Locale('fr')), isFalse);
+    expect(AppLocalizations.delegate.isSupported(const Locale('de')), isFalse);
     expect(
       AppLocalizations.delegate.shouldReload(AppLocalizations.delegate),
       isFalse,

@@ -18,6 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:riverpod/riverpod.dart';
 
+import '../helpers/app_paths.dart';
 import '../helpers/test_profiles.dart';
 
 class _MockCoreHandlerInterface extends Mock implements CoreHandlerInterface {}
@@ -56,12 +57,9 @@ void main() {
   late Completer<void>? compileGate;
   late List<({String name, String url})> compiles;
 
-  setUpAll(() {
+  setUpAll(() async {
     home = Directory.systemTemp.createTempSync('flclash-providers-action-');
-    AppPath.supportDirectory = () async => home;
-    AppPath.temporaryDirectory = () async => home;
-    AppPath.cacheDirectory = () async => home;
-    AppPath.downloadDirectory = () async => home;
+    await useAppPaths(home);
   });
 
   tearDownAll(() {
@@ -692,5 +690,31 @@ void main() {
 
       expect(setup.forced, [true]);
     });
+
+    test(
+      'a group taking in every provider or proxy reapplies only on the named',
+      () async {
+        await testDatabase.proxyGroups.put(
+          const ProxyGroup(
+            id: 23,
+            name: 'All',
+            type: GroupType.Selector,
+            includeAllProxies: true,
+            includeAllProviders: true,
+            order: 'b',
+          ).toCompanion(profileId),
+        );
+
+        await action().applyIfReferenced(ProviderKind.proxy, {
+          'Elsewhere',
+        }, force: true);
+        await action().applyIfProxiesNamed({'Unnamed'});
+        await action().applyIfReferenced(ProviderKind.proxy, {
+          'Home',
+        }, force: true);
+
+        expect(setup.forced, [true]);
+      },
+    );
   });
 }

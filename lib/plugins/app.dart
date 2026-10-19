@@ -15,6 +15,7 @@ class App {
   late MethodChannel methodChannel;
   Function()? onExit;
   Function()? onPackagesChanged;
+  final floatingKeyboard = ValueNotifier(false);
 
   App._internal() {
     methodChannel = const MethodChannel('$packageName/app');
@@ -26,6 +27,8 @@ class App {
           }
         case 'packagesChanged':
           onPackagesChanged?.call();
+        case 'floatingImeChanged':
+          floatingKeyboard.value = call.arguments as bool;
         default:
           throw MissingPluginException();
       }
@@ -73,22 +76,9 @@ class App {
     return packageNamesRaw.map((e) => e.toString()).toList();
   }
 
-  Future<bool?> requestNotificationsPermission() async {
-    return methodChannel.invokeMethod<bool>('requestNotificationsPermission');
-  }
-
-  Future<bool> openFile(String path) async {
-    return await methodChannel.invokeMethod<bool>('openFile', {'path': path}) ??
-        false;
-  }
-
   final Map<String, ImageProvider?> _packageIcons = {};
   final Map<String, Future<ImageProvider?>> _packageIconTasks = {};
   final TaskPool _packageIconPool = TaskPool(maxConcurrentIconLoads);
-
-  bool hasPackageIcon(String packageName) {
-    return _packageIcons.containsKey(packageName);
-  }
 
   ImageProvider? getCachedPackageIcon(String packageName) {
     return _packageIcons[packageName];
@@ -155,22 +145,6 @@ class App {
   Future<bool?> openAppSettings() async {
     if (!Platform.isAndroid) return false;
     return methodChannel.invokeMethod<bool>('openAppSettings');
-  }
-
-  Future<bool> didCrashOnPreviousExecution() async {
-    try {
-      final value = await methodChannel
-          .invokeMethod<bool>('didCrashOnPreviousExecution')
-          .timeout(_platformProbeTimeout);
-      return value ?? false;
-    } catch (error) {
-      commonPrint.log(
-        'Failed to read the previous-execution crash flag: '
-        '${compactError(error)}',
-        logLevel: LogLevel.warning,
-      );
-      return false;
-    }
   }
 
   Future<AppExitInfo?> getLastExitInfo() async {

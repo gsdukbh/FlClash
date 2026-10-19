@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/core/event.dart';
 import 'package:fl_clash/core/method.dart';
+import 'package:fl_clash/core/spill.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:flutter/foundation.dart';
@@ -13,11 +14,20 @@ final _utf8JsonDecoder = utf8.decoder.fuse(json.decoder);
 
 Object? _decodeUtf8Json(Uint8List data) => _utf8JsonDecoder.convert(data);
 
-Future<Object?> _decodeResponse(Uint8List data) async {
+Map<String, Object?> _decodeResponseOf((Uint8List, CoreMethod) request) {
+  final (data, method) = request;
+  final decoded = _decodeUtf8Json(data);
+  return withResultModel(method, Map<String, Object?>.from(decoded as Map));
+}
+
+Future<Map<String, Object?>> _decodeResponse(
+  Uint8List data,
+  CoreMethod method,
+) async {
   if (data.length < 51200) {
-    return _decodeUtf8Json(data);
+    return _decodeResponseOf((data, method));
   }
-  return compute(_decodeUtf8Json, data);
+  return compute(_decodeResponseOf, (data, method));
 }
 
 abstract mixin class ServiceListener {
@@ -29,6 +39,7 @@ abstract mixin class ServiceListener {
 class Service {
   static Service? _instance;
   late MethodChannel methodChannel;
+  static const _coreChannel = MethodChannel('$packageName/core');
 
   final ObserverList<ServiceListener> _listeners =
       ObserverList<ServiceListener>();
@@ -46,9 +57,10 @@ class Service {
     methodChannel.setMethodCallHandler((call) async {
       switch (call.method) {
         case 'event':
-          final data = call.arguments as String? ?? '';
           final methodCall = CoreMethodCall.fromJson(
-            Map<String, Object?>.from(json.decode(data) as Map),
+            Map<String, Object?>.from(
+              _decodeUtf8Json(call.arguments as Uint8List) as Map,
+            ),
           );
           for (final event in coreEventsFromData(methodCall.arguments)) {
             _dispatch(
@@ -72,15 +84,17 @@ class Service {
   }
 
   Future<CoreMethodResponse?> invokeMethod(CoreMethodCall call) async {
-    final data = await methodChannel.invokeMethod<Uint8List>(
+    final data = await _coreChannel.invokeMethod<Uint8List>(
       'invokeMethod',
       json.encode(call),
     );
     if (data == null) {
       return null;
     }
-    final dataJson = await _decodeResponse(data);
-    return CoreMethodResponse.fromJson(dataJson as Map<String, dynamic>);
+    return resolveSpilledResponse(
+      CoreMethodResponse.fromJson(await _decodeResponse(data, call.method)),
+      method: call.method,
+    );
   }
 
   void _dispatch(String label, void Function(ServiceListener) deliver) {
