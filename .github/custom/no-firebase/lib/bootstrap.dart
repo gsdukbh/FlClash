@@ -73,6 +73,8 @@ class Bootstrap {
     );
   }
 
+  /// Runs before migration and the database: a copy started from another
+  /// install path gets past the platform's single-instance hand-off.
   Future<void> _claimDataDirectory() async {
     if (!system.isDesktop || await singleInstanceLock.acquire()) {
       return;
@@ -102,7 +104,6 @@ class Bootstrap {
     var config = await migration.run();
     _bootDecision = await bootGuard.evaluate(
       profileId: config.currentProfileId,
-      crashlyticsEnabled: config.appSettingProps.crashlytics,
     );
     if (_bootDecision.recovery == BootRecovery.clearProfile) {
       config = config.copyWith(currentProfileId: null);
@@ -230,9 +231,12 @@ class Bootstrap {
       final file = File(await appPath.sharedPreferencesPath);
       await file.safeDelete();
     }
+    // Saving here would rewrite the preferences file the user just chose to delete.
     await _container.read(systemActionProvider.notifier).handleExit(false);
   }
 
+  /// Android's exit only finishes the activity, so Dart keeps running after
+  /// [SystemAction.handleExit] returns and must not go on to start the app.
   Future<bool> _handlerDisclaimer() async {
     final acceptedVersion = _container.read(
       appSettingProvider.select((state) => state.acceptedDisclaimerVersion),
