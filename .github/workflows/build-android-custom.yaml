@@ -139,9 +139,7 @@ jobs:
           echo "Applying customizations: Package Name = $PKG_NAME, App Name = $APP_NAME, Remove Firebase = $REMOVE_FIREBASE"
 
           if [ "$REMOVE_FIREBASE" = "true" ]; then
-            echo "Applying preconfigured no-firebase templates..."
             rm -f android/app/google-services.json
-            cp -r .github/custom/no-firebase/* .
           else
             if [ -f android/app/google-services.json ]; then
               sed -i "s/\"com.follow.clash\"/\"$PKG_NAME\"/g" android/app/google-services.json
