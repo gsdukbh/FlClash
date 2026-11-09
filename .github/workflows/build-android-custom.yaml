@@ -114,24 +114,15 @@ jobs:
               echo "storePassword=${{ secrets.STORE_PASSWORD }}"
               echo "keyPassword=${{ secrets.KEY_PASSWORD }}"
             } >> android/local.properties
+            echo "SIGNING_MODE=custom secrets" >> $GITHUB_ENV
           else
-            echo "No keystore secret provided. Generating random self-signed release keystore..."
-            RAND_PASS="flclash_$(openssl rand -hex 8)"
-            keytool -genkeypair -v \
-              -keystore android/app/keystore.jks \
-              -alias flclash_release \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass "$RAND_PASS" \
-              -keypass "$RAND_PASS" \
-              -dname "CN=Android, OU=App, O=Google, L=Mountain View, ST=CA, C=US"
-
+            echo "Using fixed release keystore from repository..."
             {
               echo "keyAlias=flclash_release"
-              echo "storePassword=$RAND_PASS"
-              echo "keyPassword=$RAND_PASS"
+              echo "storePassword=FlClash@2026Release"
+              echo "keyPassword=FlClash@2026Release"
             } >> android/local.properties
+            echo "SIGNING_MODE=fixed (repository keystore)" >> $GITHUB_ENV
           fi
 
       - name: Apply Customizations and Remove Firebase
@@ -222,6 +213,7 @@ jobs:
             - **应用包名**: ${{ env.PKG_NAME }}
             - **构建架构**: ${{ env.BUILD_ARCH }}
             - **移除 Firebase**: ${{ env.REMOVE_FIREBASE }}
+            - **签名状态**: ${{ env.SIGNING_MODE }}
             - **构建时间**: ${{ github.event.head_commit.timestamp || github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
