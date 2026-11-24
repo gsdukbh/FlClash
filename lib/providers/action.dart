@@ -7,7 +7,7 @@ import 'package:fl_clash/common/app_data.dart';
 import 'package:fl_clash/common/boot_guard.dart';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/common/mitm_module.dart';
-import 'package:fl_clash/common/system_dns.dart';
+import 'package:fl_clash/common/release_asset.dart';
 import 'package:fl_clash/core/core.dart';
 import 'package:fl_clash/database/database.dart';
 import 'package:fl_clash/enum/enum.dart';
@@ -25,7 +25,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' show basename, basenameWithoutExtension, join;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 part 'actions/common.dart';
 part 'actions/setup.dart';

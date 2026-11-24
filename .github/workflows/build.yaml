@@ -14,7 +14,7 @@ env:
   IS_STABLE: ${{ !contains(github.ref, '-') }}
   # See CI Caches in .agents/commands.md.
   BRANCH_CACHE: ${{ !startsWith(github.ref, 'refs/tags/') }}
-  FLUTTER_VERSION: '3.47.6'
+  FLUTTER_VERSION: '3.50.0'
   GO_VERSION: '1.27.1'
   NDK_VERSION: r28c
 
@@ -49,14 +49,22 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: ${{ env.BRANCH_CACHE }}
 
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Check format
-        run: dart format --output=none --set-exit-if-changed lib test tool plugins setup.dart
+        run: dart format --output=none --set-exit-if-changed lib test tool plugins
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos
+
+      - name: Analyze with the rsFeature checks stripped
+        run: bash tool/strip_check.sh
 
       - name: Skip the Go core build hook
         run: |
@@ -147,7 +155,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libgtk-3-dev libayatana-appindicator3-dev libsecret-1-dev
+          sudo apt-get install -y ninja-build libgtk-3-dev libsecret-1-dev
 
       - name: Setup Xcode
         if: matrix.platform == 'macos'
@@ -292,6 +300,11 @@ jobs:
             plugins/rust_api/rust
           save-if: ${{ env.BRANCH_CACHE }}
 
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev
+
       - name: Check format
         run: |
           cargo fmt --manifest-path services/helper/Cargo.toml -- --check
@@ -322,9 +335,42 @@ jobs:
       - name: Run Windows service tests
         run: cargo test --manifest-path services/helper/Cargo.toml --features windows-service
 
-  build:
+  version:
+    name: Version
     # Releases publish where the release links point: the public repository.
-    if: github.repository == 'chen08209/FlClash' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: &release github.repository == 'chen08209/FlClash' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: pubspec.yaml
+          sparse-checkout-cone-mode: false
+
+      # Android refuses a lower versionCode, so the clock-based build number never drops below pubspec's.
+      - name: Resolve the version from the tag
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-pre\.[0-9]+(\+[0-9]+)?)?$ ]]; then
+            echo "::error::$TAG is neither vX.Y.Z nor vX.Y.Z-pre.N[+M]"
+            exit 1
+          fi
+          name="${BASH_REMATCH[1]}"
+          committed="$(sed -n 's/^version: .*+\([0-9]*\)$/\1/p' pubspec.yaml)"
+          build="$(date -u +%Y%m%d%H)"
+          if ((build <= ${committed:-0})); then
+            build=$((committed + 1))
+          fi
+          echo "version=$name+$build" >> "$GITHUB_OUTPUT"
+          echo "$TAG builds $name+$build"
+
+  build:
+    if: *release
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -366,6 +412,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Apply the tag's version
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          sed "s/^version: .*/version: $VERSION/" pubspec.yaml > pubspec.yaml.tmp
+          mv pubspec.yaml.tmp pubspec.yaml
 
       - name: Setup Android Signing
         if: startsWith(matrix.platform,'android')
@@ -421,11 +475,6 @@ jobs:
           flutter --version
           flutter pub get
 
-      # See .agents/flutter-upgrade.md before bumping FLUTTER_VERSION.
-      - name: Disable Impeller on Intel macOS
-        if: matrix.platform == 'macos' && matrix.arch == 'amd64'
-        run: plutil -replace FLTEnableImpeller -bool NO macos/Runner/Info.plist
-
       # The core embeds this bundle and FlClashHttpOverrides.trustCoreRoots loads it for Dart.
       # Pinned by hash, so a new bundle from https://curl.se/docs/caextract.html is a reviewed bump.
       - name: Fetch CA certificates
@@ -441,7 +490,10 @@ jobs:
       - name: Setup
         env:
           ANDROID_NDK_HOME: ${{ steps.build-ndk.outputs.ndk-path }}
-        run: dart setup.dart ${{ matrix.platform }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }} -v
+          # The setup hook builds the Core for the host slice only, so an x86_64 slice in the arm64 app cannot run.
+          FLUTTER_MACOS_ARM64_ONLY: ${{ matrix.platform == 'macos' && matrix.arch == 'arm64' }}
+        # `dart run` first runs every build hook for this runner, Linux GTK and the Go core included; the packager builds them for the target itself.
+        run: dart tool/package.dart ${{ matrix.platform }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }} -v
 
       - name: Upload
         uses: actions/upload-artifact@v4
@@ -453,7 +505,7 @@ jobs:
   upload:
     permissions:
       contents: write
-    needs: [ build, dart, plugins, go, android, rust, windows-helper-test ]
+    needs: [ version, build, dart, plugins, go, android, rust, windows-helper-test ]
     runs-on: ubuntu-latest
     services:
       telegram-bot-api:
@@ -470,12 +522,17 @@ jobs:
           fetch-depth: 0
           submodules: true
 
+      - name: Apply the tag's version
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          sed -i "s/^version: .*/version: $VERSION/" pubspec.yaml
+
       - name: Download
         uses: actions/download-artifact@v4
         with:
-          path: ./dist/
+          path: ./artifacts/
           pattern: artifact-*
-          merge-multiple: true
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -490,6 +547,9 @@ jobs:
       - name: Skip native build hooks
         run: |
           yq -i '.hooks.user_defines.setup.build_assets = false | .hooks.user_defines.rust_api.build_assets = false' pubspec.yaml
+
+      - name: Merge the build manifests
+        run: dart run tool/package.dart merge artifacts/* --out dist
 
       - name: Generate release notes
         shell: bash
@@ -518,14 +578,12 @@ jobs:
 
       - name: Patch release.md
         run: |
-          version=$(echo "${{ github.ref_name }}" | sed 's/^v//')
-          sed "s|VERSION|$version|g" ./.github/release_template.md >> release.md
+          version=$(jq -r '.artifacts[0].version' dist/manifest.json)
+          sed -e "s|TAG|${{ github.ref_name }}|g" -e "s|VERSION|$version|g" \
+            ./.github/release_template.md >> release.md
 
-      - name: Generate sha256
-        if: ${{ env.IS_STABLE == 'true' }}
-        run: |
-          cd ./dist
-          sha256sum ./* > SHA256SUMS
+      - name: Check every file the release is looked up by
+        run: dart run tool/package.dart check dist
 
       - name: Release
         if: ${{ env.IS_STABLE == 'true' }}
@@ -537,9 +595,12 @@ jobs:
       - name: Create Homebrew Cask Source Dir
         if: ${{ env.IS_STABLE == 'true' }}
         run: |
-          version=$(echo "${{ github.ref_name }}" | sed 's/^v//')
-          arm_sha=$(sha256sum "./dist/FlClash-${version}-macos-arm64.dmg" | awk '{print $1}')
-          amd_sha=$(sha256sum "./dist/FlClash-${version}-macos-amd64.dmg" | awk '{print $1}')
+          dmg() {
+            jq -er --arg arch "$1" '.artifacts[] | select(.os == "macos" and .arch == $arch)' dist/manifest.json
+          }
+          version=$(dmg arm64 | jq -r .version)
+          arm_sha=$(dmg arm64 | jq -r .sha256)
+          amd_sha=$(dmg amd64 | jq -r .sha256)
 
           mkdir -p ./brew/Casks
           sed \
@@ -567,8 +628,8 @@ jobs:
         if: ${{ env.IS_STABLE == 'true' }}
         run: |
           mkdir -p ./tmp
-          cp ./dist/*android-arm64-v8a* ./tmp/ || true
-          echo "Files copied successfully"
+          apk=$(jq -er '.artifacts[] | select(.os == "android" and .arch == "arm64") | .name' dist/manifest.json)
+          cp "./dist/$apk" ./tmp/
 
       - name: Push to fdroid repo
         if: ${{ env.IS_STABLE == 'true' }}

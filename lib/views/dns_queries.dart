@@ -62,8 +62,7 @@ class _DnsQueriesViewState extends ConsumerState<DnsQueriesView>
   void initState() {
     super.initState();
     _scrollController =
-        widget.scrollController ??
-        sheetScrollController(context, initialScrollOffset: double.maxFinite);
+        widget.scrollController ?? sheetScrollController(context);
     _setDnsQueries(ref.read(dnsQueriesProvider).list);
     ref.listenManual(dnsQueriesProvider.select((state) => state.revision), (
       _,
@@ -231,8 +230,8 @@ class _DnsQueriesViewState extends ConsumerState<DnsQueriesView>
 }
 
 void _showDnsQueryDetail(BuildContext context, DnsQuery dnsQuery) {
-  showSheet<void>(
-    context: context,
+  showNestedSheet<void>(
+    context,
     builder: (_) {
       return Scaffold(
         body: DnsQueryDetailView(dnsQuery: dnsQuery),
